@@ -1,0 +1,116 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 400" role="img" aria-label="Left: spec v0.3 phone holds wake word, VAD, STT, LLM, TTS, routing policy and memory, with remote providers as an unavailable stub. Right: redesigned phone holds wake word, VAD, Rive bubble and tray, linked by one WebSocket to a brain holding gateway, STT, Claude, TTS, memory, rc-mcp tools and monitors.">
+        
+<style>
+  svg { color:#161413; font-family: Archivo, "Helvetica Neue", Arial, sans-serif; }
+  .box { fill:#ffffff; stroke:currentColor; stroke-width:1.4; }
+  .box.srv { fill:#e6e9ec; }
+  .box.ghost { fill:none; stroke:#6f6a67; stroke-dasharray:4 4; }
+  .box.hotline { stroke:#ec3013; stroke-width:2; }
+  .col { fill:none; stroke:#d6d1ce; stroke-width:1.5; }
+  .col.srv { fill:#e6e9ec; fill-opacity:0.45; }
+  .t { font-size:12.5px; font-weight:600; fill:currentColor; }
+  .s { font-family:"IBM Plex Mono",Menlo,Consolas,monospace; font-size:10.5px; fill:#6f6a67; }
+  .hd { font-family:"IBM Plex Mono",Menlo,Consolas,monospace; font-size:11px; letter-spacing:0.08em; fill:#6f6a67; }
+  .tag { font-family:"IBM Plex Mono",Menlo,Consolas,monospace; font-size:10.5px; fill:#ec3013; }
+  .lbl { font-family:"IBM Plex Mono",Menlo,Consolas,monospace; font-size:11px; fill:currentColor; }
+  .lbl.m { fill:#6f6a67; }
+  .lbl.hot { fill:#ec3013; font-weight:500; }
+  .bar { fill:#ffffff; stroke:currentColor; stroke-width:1.2; }
+  .bar.hot { stroke:#ec3013; stroke-width:1.8; }
+  .bt { font-family:"IBM Plex Mono",Menlo,Consolas,monospace; font-size:10px; fill:currentColor; }
+  .lane { stroke:#d6d1ce; stroke-width:1.5; }
+  .ln { stroke:currentColor; stroke-width:1.4; fill:none; }
+  .ln.d { stroke-dasharray:4 3; }
+  .ln.hot { stroke:#ec3013; stroke-width:2.4; }
+  .ln.hotd { stroke:#ec3013; stroke-width:1.6; stroke-dasharray:5 4; }
+  .halo { stroke:#f3f2f2; stroke-width:7; fill:none; }
+  .arr polygon { fill:currentColor; }
+  .arrhot polygon { fill:#ec3013; }
+  .arrm polygon { fill:#6f6a67; }
+</style>
+<defs>
+          <marker id="arr1" class="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><polygon points="0,0 10,5 0,10"/></marker>
+          <marker id="arr1m" class="arrm" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><polygon points="0,0 10,5 0,10"/></marker>
+          <marker id="arr1h" class="arrhot" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><polygon points="0,0 10,5 0,10"/></marker>
+        </defs><rect width="960" height="400" fill="#f3f2f2"/>
+
+        <!-- LEFT: spec -->
+        <text class="hd" x="10" y="24">SPEC v0.3 · EDGE-FIRST</text>
+        <rect class="col" x="10" y="40" width="240" height="340"/>
+        <text class="s" x="26" y="60">Phone · everything on device</text>
+
+        <rect class="box" x="26" y="70" width="208" height="34"/>
+        <text class="t" x="36" y="92">Wake word</text>
+        <text class="s" x="226" y="92" text-anchor="end">stays</text>
+
+        <rect class="box" x="26" y="112" width="208" height="34"/>
+        <text class="t" x="36" y="134">VAD</text>
+        <text class="s" x="226" y="134" text-anchor="end">stays</text>
+
+        <rect class="box" x="26" y="154" width="208" height="34"/>
+        <text class="t" x="36" y="176">STT · whisper.cpp</text>
+        <text class="tag" x="226" y="176" text-anchor="end">→ brain</text>
+
+        <rect class="box" x="26" y="196" width="208" height="34"/>
+        <text class="t" x="36" y="218">LLM · on-device model</text>
+        <text class="tag" x="226" y="218" text-anchor="end">→ brain</text>
+
+        <rect class="box" x="26" y="238" width="208" height="34"/>
+        <text class="t" x="36" y="260">TTS · Piper</text>
+        <text class="tag" x="226" y="260" text-anchor="end">→ brain</text>
+
+        <rect class="box" x="26" y="280" width="208" height="34"/>
+        <text class="t" x="36" y="302">Routing policy · queue</text>
+        <text class="tag" x="226" y="302" text-anchor="end">removed</text>
+
+        <rect class="box" x="26" y="322" width="208" height="34"/>
+        <text class="t" x="36" y="344">Memory · context</text>
+        <text class="tag" x="226" y="344" text-anchor="end">→ brain</text>
+
+        <rect class="box ghost" x="290" y="150" width="190" height="110"/>
+        <text class="t" x="304" y="176">Remote providers</text>
+        <text class="s" x="304" y="196">stub · available() = false</text>
+        <text class="s" x="304" y="212">transport: out of scope</text>
+        <text class="s" x="304" y="228">never reached in v1</text>
+        <line class="ln d" x1="234" y1="213" x2="290" y2="205" marker-end="url(#arr1m)" stroke="#6f6a67"/>
+
+        <!-- RIGHT: redesign -->
+        <text class="hd" x="500" y="24">REDESIGN · THIN CLIENT</text>
+        <rect class="col" x="500" y="40" width="180" height="340"/>
+        <text class="s" x="516" y="60">Phone · ears and face</text>
+
+        <rect class="box" x="516" y="70" width="148" height="34"/>
+        <text class="t" x="526" y="92">Wake word</text>
+        <rect class="box" x="516" y="112" width="148" height="34"/>
+        <text class="t" x="526" y="134">VAD</text>
+        <rect class="box" x="516" y="154" width="148" height="34"/>
+        <text class="t" x="526" y="176">Rive bubble · panel</text>
+        <rect class="box" x="516" y="196" width="148" height="34"/>
+        <text class="t" x="526" y="218">Tray · share sheet</text>
+        <text class="s" x="516" y="352">no models</text>
+        <text class="s" x="516" y="366">no routing · no LLM</text>
+
+        <rect class="col srv" x="780" y="40" width="170" height="340"/>
+        <text class="s" x="796" y="60">Brain · your server</text>
+
+        <rect class="box hotline" x="796" y="70" width="138" height="34"/>
+        <text class="t" x="806" y="92">Gateway · WS</text>
+        <rect class="box" x="796" y="112" width="138" height="34"/>
+        <text class="t" x="806" y="134">STT · champi-stt</text>
+        <rect class="box" x="796" y="154" width="138" height="34"/>
+        <text class="t" x="806" y="176">LLM · Claude</text>
+        <rect class="box" x="796" y="196" width="138" height="34"/>
+        <text class="t" x="806" y="218">TTS · champi-tts</text>
+        <rect class="box" x="796" y="238" width="138" height="34"/>
+        <text class="t" x="806" y="260">Memory</text>
+        <rect class="box" x="796" y="280" width="138" height="34"/>
+        <text class="t" x="806" y="302">Tools · rc-mcp</text>
+        <rect class="box" x="796" y="322" width="138" height="34"/>
+        <text class="t" x="806" y="344">Monitors</text>
+
+        <line class="ln hot" x1="680" y1="87" x2="780" y2="87" marker-start="url(#arr1h)" marker-end="url(#arr1h)"/>
+        <text class="lbl hot" x="730" y="70" text-anchor="middle">WebSocket</text>
+        <text class="lbl" x="730" y="108" text-anchor="middle">→ PCM · text</text>
+        <text class="lbl" x="730" y="122" text-anchor="middle">← audio · text</text>
+        <text class="lbl m" x="730" y="140" text-anchor="middle">Tailscale</text>
+      </svg>

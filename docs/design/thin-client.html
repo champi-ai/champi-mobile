@@ -1,0 +1,576 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Champi Thin Client</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --bg: #f3f2f2;
+    --ink: #161413;
+    --muted: #6f6a67;
+    --hair: #d6d1ce;
+    --panel: #ffffff;
+    --panel2: #e6e9ec;
+    --accent: #ec3013;
+    --sans: "Archivo", "Helvetica Neue", Arial, sans-serif;
+    --mono: "IBM Plex Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #151312;
+      --ink: #f1eeec;
+      --muted: #a39c98;
+      --hair: #3a3533;
+      --panel: #1f1c1b;
+      --panel2: #262b30;
+      --accent: #ff5a3c;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #151312;
+    --ink: #f1eeec;
+    --muted: #a39c98;
+    --hair: #3a3533;
+    --panel: #1f1c1b;
+    --panel2: #262b30;
+    --accent: #ff5a3c;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  main { max-width: 960px; margin: 0 auto; padding: 48px 24px 80px; }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 12px;
+  }
+  h1 {
+    font-size: clamp(36px, 6vw, 56px);
+    font-weight: 800;
+    line-height: 1.02;
+    letter-spacing: -0.02em;
+    margin: 0 0 20px;
+    text-wrap: balance;
+  }
+  .dek {
+    font-size: 19px;
+    line-height: 1.45;
+    max-width: 62ch;
+    margin: 0 0 28px;
+  }
+  .meta {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 0;
+    border-top: 2px solid var(--ink);
+    border-bottom: 2px solid var(--ink);
+    margin: 0 0 56px;
+  }
+  .meta div { padding: 14px 16px 14px 0; }
+  .meta div + div { border-left: 1px solid var(--hair); padding-left: 16px; }
+  .meta .k { font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+  .meta .v { font-weight: 600; font-size: 17px; margin-top: 4px; font-variant-numeric: tabular-nums; }
+
+  section { border-top: 2px solid var(--ink); padding-top: 22px; margin-top: 56px; }
+  h2 {
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -0.015em;
+    line-height: 1.15;
+    margin: 0 0 12px;
+    text-wrap: balance;
+  }
+  p { max-width: 68ch; margin: 0 0 14px; }
+  p.lead { font-size: 17px; }
+
+  figure { margin: 28px 0 8px; }
+  figure svg { display: block; width: 100%; height: auto; color: var(--ink); }
+  figcaption {
+    font-size: 14px;
+    color: var(--muted);
+    max-width: 68ch;
+    margin: 12px 0 0;
+    line-height: 1.5;
+  }
+  figcaption b { color: var(--ink); font-weight: 600; }
+
+  /* SVG vocabulary */
+  .box { fill: var(--panel); stroke: currentColor; stroke-width: 1.4; }
+  .box.srv { fill: var(--panel2); }
+  .box.ghost { fill: none; stroke: var(--muted); stroke-dasharray: 4 4; }
+  .box.hotline { stroke: var(--accent); stroke-width: 2; }
+  .col { fill: none; stroke: var(--hair); stroke-width: 1.5; }
+  .col.srv { fill: var(--panel2); fill-opacity: 0.45; }
+  .t { font-family: var(--sans); font-size: 12.5px; font-weight: 600; fill: currentColor; }
+  .s { font-family: var(--mono); font-size: 10.5px; fill: var(--muted); }
+  .hd { font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; fill: var(--muted); }
+  .tag { font-family: var(--mono); font-size: 10.5px; fill: var(--accent); }
+  .lbl { font-family: var(--mono); font-size: 11px; fill: currentColor; }
+  .lbl.m { fill: var(--muted); }
+  .lbl.hot { fill: var(--accent); font-weight: 500; }
+  .bar { fill: var(--panel); stroke: currentColor; stroke-width: 1.2; }
+  .bar.hot { stroke: var(--accent); stroke-width: 1.8; }
+  .bt { font-family: var(--mono); font-size: 10px; fill: currentColor; }
+  .lane { stroke: var(--hair); stroke-width: 1.5; }
+  .ln { stroke: currentColor; stroke-width: 1.4; fill: none; }
+  .ln.d { stroke-dasharray: 4 3; }
+  .ln.hot { stroke: var(--accent); stroke-width: 2.4; }
+  .ln.hotd { stroke: var(--accent); stroke-width: 1.6; stroke-dasharray: 5 4; }
+  .halo { stroke: var(--bg); stroke-width: 7; fill: none; }
+  .arr polygon { fill: currentColor; }
+  .arrhot polygon { fill: var(--accent); }
+  .arrm polygon { fill: var(--muted); }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14.5px;
+    margin: 20px 0 0;
+  }
+  .tablewrap { overflow-x: auto; }
+  th, td { text-align: left; vertical-align: top; padding: 10px 14px 10px 0; border-bottom: 1px solid var(--hair); }
+  th { font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 500; border-bottom: 2px solid var(--ink); }
+  td code, p code, li code { font-family: var(--mono); font-size: 0.92em; }
+  td.mod { font-family: var(--mono); font-size: 13px; white-space: nowrap; }
+  .chip { display: inline-block; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; padding: 2px 6px; border: 1px solid currentColor; margin-right: 6px; vertical-align: middle; }
+  .chip.r2 { color: var(--muted); }
+  .chip.hot { color: var(--accent); }
+
+  ul.changes { list-style: none; padding: 0; margin: 16px 0 0; max-width: 70ch; }
+  ul.changes li { padding: 12px 0; border-bottom: 1px solid var(--hair); display: grid; grid-template-columns: 150px 1fr; gap: 16px; }
+  ul.changes li:first-child { border-top: 1px solid var(--hair); }
+  ul.changes .from { font-family: var(--mono); font-size: 12px; color: var(--muted); text-decoration: line-through; padding-top: 3px; }
+  ul.changes .to { font-size: 15px; }
+  ul.changes .to b { font-weight: 600; }
+
+  a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+  a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  @media (max-width: 640px) {
+    ul.changes li { grid-template-columns: 1fr; gap: 4px; }
+  }
+</style>
+
+</head>
+<body>
+<main>
+  <p class="eyebrow">champi-android · redesign note · 2026-09-02</p>
+  <h1>Champi Thin Client</h1>
+  <p class="dek">The phone keeps its ears and its face. Everything that thinks, remembers, listens closely, or acts on your machines moves to a brain running where your GPUs are. One WebSocket replaces the whole on-device model stack.</p>
+  <div class="meta">
+    <div><div class="k">Round 1</div><div class="v">31 issues · thin client</div></div>
+    <div><div class="k">Round 2</div><div class="v">27 issues · deferred</div></div>
+    <div><div class="k">Stays on phone</div><div class="v">Wake word · VAD · Rive · tray</div></div>
+    <div><div class="k">Moves to brain</div><div class="v">STT · LLM · TTS · memory · tools</div></div>
+  </div>
+
+  <!-- ============ 1. BEFORE / AFTER ============ -->
+  <section>
+    <p class="eyebrow">01 · what changes</p>
+    <h2>Edge-first spec becomes a thin client</h2>
+    <p class="lead">The v0.3 spec put five inference stages and a routing policy inside the phone and left remote providers as stubs with transport out of scope. For a personal Jarvis the transport <em>is</em> the product, and the heavy stages already exist as champi-stt, champi-tts, and rc-mcp on your infrastructure.</p>
+
+    <figure>
+      <svg viewBox="0 0 960 400" role="img" aria-label="Left: spec v0.3 phone holds wake word, VAD, STT, LLM, TTS, routing policy and memory, with remote providers as an unavailable stub. Right: redesigned phone holds wake word, VAD, Rive bubble and tray, linked by one WebSocket to a brain holding gateway, STT, Claude, TTS, memory, rc-mcp tools and monitors.">
+        <defs>
+          <marker id="arr1" class="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><polygon points="0,0 10,5 0,10"/></marker>
+          <marker id="arr1m" class="arrm" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><polygon points="0,0 10,5 0,10"/></marker>
+          <marker id="arr1h" class="arrhot" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><polygon points="0,0 10,5 0,10"/></marker>
+        </defs>
+
+        <!-- LEFT: spec -->
+        <text class="hd" x="10" y="24">SPEC v0.3 · EDGE-FIRST</text>
+        <rect class="col" x="10" y="40" width="240" height="340"/>
+        <text class="s" x="26" y="60">Phone · everything on device</text>
+
+        <rect class="box" x="26" y="70" width="208" height="34"/>
+        <text class="t" x="36" y="92">Wake word</text>
+        <text class="s" x="226" y="92" text-anchor="end">stays</text>
+
+        <rect class="box" x="26" y="112" width="208" height="34"/>
+        <text class="t" x="36" y="134">VAD</text>
+        <text class="s" x="226" y="134" text-anchor="end">stays</text>
+
+        <rect class="box" x="26" y="154" width="208" height="34"/>
+        <text class="t" x="36" y="176">STT · whisper.cpp</text>
+        <text class="tag" x="226" y="176" text-anchor="end">→ brain</text>
+
+        <rect class="box" x="26" y="196" width="208" height="34"/>
+        <text class="t" x="36" y="218">LLM · on-device model</text>
+        <text class="tag" x="226" y="218" text-anchor="end">→ brain</text>
+
+        <rect class="box" x="26" y="238" width="208" height="34"/>
+        <text class="t" x="36" y="260">TTS · Piper</text>
+        <text class="tag" x="226" y="260" text-anchor="end">→ brain</text>
+
+        <rect class="box" x="26" y="280" width="208" height="34"/>
+        <text class="t" x="36" y="302">Routing policy · queue</text>
+        <text class="tag" x="226" y="302" text-anchor="end">removed</text>
+
+        <rect class="box" x="26" y="322" width="208" height="34"/>
+        <text class="t" x="36" y="344">Memory · context</text>
+        <text class="tag" x="226" y="344" text-anchor="end">→ brain</text>
+
+        <rect class="box ghost" x="290" y="150" width="190" height="110"/>
+        <text class="t" x="304" y="176">Remote providers</text>
+        <text class="s" x="304" y="196">stub · available() = false</text>
+        <text class="s" x="304" y="212">transport: out of scope</text>
+        <text class="s" x="304" y="228">never reached in v1</text>
+        <line class="ln d" x1="234" y1="213" x2="290" y2="205" marker-end="url(#arr1m)" stroke="var(--muted)"/>
+
+        <!-- RIGHT: redesign -->
+        <text class="hd" x="500" y="24">REDESIGN · THIN CLIENT</text>
+        <rect class="col" x="500" y="40" width="180" height="340"/>
+        <text class="s" x="516" y="60">Phone · ears and face</text>
+
+        <rect class="box" x="516" y="70" width="148" height="34"/>
+        <text class="t" x="526" y="92">Wake word</text>
+        <rect class="box" x="516" y="112" width="148" height="34"/>
+        <text class="t" x="526" y="134">VAD</text>
+        <rect class="box" x="516" y="154" width="148" height="34"/>
+        <text class="t" x="526" y="176">Rive bubble · panel</text>
+        <rect class="box" x="516" y="196" width="148" height="34"/>
+        <text class="t" x="526" y="218">Tray · share sheet</text>
+        <text class="s" x="516" y="352">no models</text>
+        <text class="s" x="516" y="366">no routing · no LLM</text>
+
+        <rect class="col srv" x="780" y="40" width="170" height="340"/>
+        <text class="s" x="796" y="60">Brain · your server</text>
+
+        <rect class="box hotline" x="796" y="70" width="138" height="34"/>
+        <text class="t" x="806" y="92">Gateway · WS</text>
+        <rect class="box" x="796" y="112" width="138" height="34"/>
+        <text class="t" x="806" y="134">STT · champi-stt</text>
+        <rect class="box" x="796" y="154" width="138" height="34"/>
+        <text class="t" x="806" y="176">LLM · Claude</text>
+        <rect class="box" x="796" y="196" width="138" height="34"/>
+        <text class="t" x="806" y="218">TTS · champi-tts</text>
+        <rect class="box" x="796" y="238" width="138" height="34"/>
+        <text class="t" x="806" y="260">Memory</text>
+        <rect class="box" x="796" y="280" width="138" height="34"/>
+        <text class="t" x="806" y="302">Tools · rc-mcp</text>
+        <rect class="box" x="796" y="322" width="138" height="34"/>
+        <text class="t" x="806" y="344">Monitors</text>
+
+        <line class="ln hot" x1="680" y1="87" x2="780" y2="87" marker-start="url(#arr1h)" marker-end="url(#arr1h)"/>
+        <text class="lbl hot" x="730" y="70" text-anchor="middle">WebSocket</text>
+        <text class="lbl" x="730" y="108" text-anchor="middle">→ PCM · text</text>
+        <text class="lbl" x="730" y="122" text-anchor="middle">← audio · text</text>
+        <text class="lbl m" x="730" y="140" text-anchor="middle">Tailscale</text>
+      </svg>
+      <figcaption><b>The one edge that changes everything.</b> Left, the spec's phone carries seven subsystems and a routing heuristic to decide between them. Right, four stay on the phone and a single authenticated WebSocket carries PCM and text up, audio and tokens down. The red-outlined gateway is the only new server component the phone knows about.</figcaption>
+    </figure>
+
+    <ul class="changes">
+      <li><span class="from">edge-first routing</span><span class="to"><b>Remote-first, one route.</b> No fits heuristic, no queue, no edge-only mode. Offline shows a banner and buffers text; that is round 2.</span></li>
+      <li><span class="from">120 MB memory budget</span><span class="to"><b>Phone stays under 60 MB</b> with only wake word and VAD models loaded. Battery target still matters because the mic loop is always on.</span></li>
+      <li><span class="from">providers:remote stub</span><span class="to"><b><code>:providers:remote</code> becomes the main provider.</b> One <code>BrainClient</code> satisfies <code>SttProvider</code>, <code>LlmProvider</code> and <code>TtsProvider</code> over the same socket.</span></li>
+      <li><span class="from">context windowing</span><span class="to"><b>The brain owns memory.</b> Ideas, commands and conversation live server-side. The phone keeps a local transcript cache so the panel reopens where you left it.</span></li>
+      <li><span class="from">privacy onboarding</span><span class="to"><b>One sentence in settings.</b> Audio leaves the phone only after wake or mic press, and only to your own server over Tailscale.</span></li>
+    </ul>
+  </section>
+
+  <!-- ============ 2. DATA FLOW ============ -->
+  <section>
+    <p class="eyebrow">02 · data flow</p>
+    <h2>Where each byte goes</h2>
+    <p class="lead">Three tiers. The phone produces PCM, text, and shared items and consumes tokens, audio, and pushes. The brain brokers streams and runs the agent loop. Your infrastructure does the heavy lifting and is reachable only over your private network.</p>
+
+    <figure>
+      <svg viewBox="0 0 960 470" role="img" aria-label="Three columns. Phone column with bubble, wake word and VAD, local cache, notification tray, share sheet. Brain column with gateway, agent loop, memory, scheduler. Infrastructure column with champi-stt, champi-tts, Claude API, rc-mcp, and GPUs, docker, services. Red arrows carry PCM, text and files from phone to gateway and audio, tokens and notifications back. Gateway exchanges PCM and transcripts with champi-stt, sentences and audio chunks with champi-tts. Agent loop exchanges prompts and tokens with Claude API and sends MCP tool calls to rc-mcp, whose agents reach GPUs, docker and services.">
+        <defs>
+          <marker id="arr2" class="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><polygon points="0,0 10,5 0,10"/></marker>
+          <marker id="arr2h" class="arrhot" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><polygon points="0,0 10,5 0,10"/></marker>
+        </defs>
+
+        <text class="hd" x="20" y="24">PHONE</text>
+        <text class="hd" x="360" y="24">BRAIN · YOUR SERVER</text>
+        <text class="hd" x="720" y="24">YOUR INFRASTRUCTURE</text>
+
+        <rect class="col" x="20" y="36" width="220" height="414"/>
+        <rect class="col srv" x="360" y="36" width="240" height="414"/>
+        <rect class="col srv" x="720" y="36" width="220" height="414"/>
+
+        <!-- Phone boxes -->
+        <rect class="box" x="36" y="60" width="188" height="44"/>
+        <text class="t" x="46" y="78">Bubble · panel</text>
+        <text class="s" x="46" y="94">Rive · Compose · state</text>
+        <text class="tag" x="214" y="78" text-anchor="end">◀ tokens</text>
+
+        <rect class="box" x="36" y="124" width="188" height="44"/>
+        <text class="t" x="46" y="142">Wake word · VAD</text>
+        <text class="s" x="46" y="158">on device · always on</text>
+        <text class="tag" x="214" y="142" text-anchor="end">PCM ▶</text>
+
+        <rect class="box" x="36" y="188" width="188" height="44"/>
+        <text class="t" x="46" y="206">Local cache</text>
+        <text class="s" x="46" y="222">Room transcript · DataStore</text>
+
+        <rect class="box" x="36" y="252" width="188" height="44"/>
+        <text class="t" x="46" y="270">Notification tray</text>
+        <text class="s" x="46" y="286">reply from lock screen</text>
+        <text class="tag" x="214" y="270" text-anchor="end">◀ push</text>
+
+        <rect class="box" x="36" y="316" width="188" height="44"/>
+        <text class="t" x="46" y="334">Share sheet</text>
+        <text class="s" x="46" y="350">idea inbox from any app</text>
+        <text class="tag" x="214" y="334" text-anchor="end">idea ▶</text>
+
+        <text class="s" x="36" y="438">brain client · one WebSocket</text>
+
+        <!-- Brain boxes -->
+        <rect class="box hotline" x="376" y="60" width="208" height="172"/>
+        <text class="t" x="386" y="80">Gateway</text>
+        <text class="s" x="386" y="96">auth · WS · stream broker</text>
+        <text class="s" x="386" y="128">· one session per phone</text>
+        <text class="s" x="386" y="144">· PCM ↔ champi-stt</text>
+        <text class="s" x="386" y="160">· sentences ↔ champi-tts</text>
+        <text class="s" x="386" y="176">· tokens and pushes ↓ phone</text>
+        <text class="s" x="386" y="192">· share items → agent loop</text>
+
+        <rect class="box" x="376" y="252" width="208" height="44"/>
+        <text class="t" x="386" y="270">Agent loop</text>
+        <text class="s" x="386" y="286">Claude · tools · confirmations</text>
+
+        <rect class="box" x="376" y="316" width="100" height="44"/>
+        <text class="t" x="386" y="334">Memory</text>
+        <text class="s" x="386" y="350">ideas · notes</text>
+
+        <rect class="box" x="484" y="316" width="100" height="44"/>
+        <text class="t" x="494" y="334">Scheduler</text>
+        <text class="s" x="494" y="350">cron checks</text>
+
+        <text class="s" x="376" y="438">python · champi-ipc · champi-signals</text>
+
+        <!-- Infra boxes -->
+        <rect class="box" x="736" y="124" width="188" height="44"/>
+        <text class="t" x="746" y="142">champi-stt</text>
+        <text class="s" x="746" y="158">Whisper on GPU · streaming</text>
+
+        <rect class="box" x="736" y="188" width="188" height="44"/>
+        <text class="t" x="746" y="206">champi-tts</text>
+        <text class="s" x="746" y="222">Kokoro on GPU · streaming</text>
+
+        <rect class="box" x="736" y="252" width="188" height="44"/>
+        <text class="t" x="746" y="270">Claude API</text>
+        <text class="s" x="746" y="286">Opus 5 · Sonnet 5 monitors</text>
+
+        <rect class="box" x="736" y="316" width="188" height="44"/>
+        <text class="t" x="746" y="334">rc-mcp</text>
+        <text class="s" x="746" y="350">server + agent per machine</text>
+
+        <rect class="box" x="736" y="380" width="188" height="44"/>
+        <text class="t" x="746" y="398">GPUs · docker · services</text>
+        <text class="s" x="746" y="414">shell · files · procs</text>
+
+        <text class="s" x="736" y="438">Tailscale · nothing public</text>
+
+        <!-- Phone <-> Gateway (hot) -->
+        <line class="ln hot" x1="240" y1="140" x2="376" y2="140" marker-end="url(#arr2h)"/>
+        <text class="lbl hot" x="308" y="133" text-anchor="middle">PCM · text · files</text>
+        <line class="ln hot" x1="376" y1="162" x2="240" y2="162" marker-end="url(#arr2h)"/>
+        <text class="lbl hot" x="308" y="178" text-anchor="middle">audio · tokens</text>
+        <text class="lbl hot" x="308" y="191" text-anchor="middle">notifications</text>
+
+        <!-- Gateway <-> STT -->
+        <line class="ln" x1="584" y1="140" x2="736" y2="140" marker-end="url(#arr2)"/>
+        <text class="lbl" x="660" y="133" text-anchor="middle">PCM stream</text>
+        <line class="ln" x1="736" y1="162" x2="584" y2="162" marker-end="url(#arr2)"/>
+        <text class="lbl" x="660" y="178" text-anchor="middle">transcripts</text>
+
+        <!-- Gateway <-> TTS -->
+        <line class="ln" x1="584" y1="204" x2="736" y2="204" marker-end="url(#arr2)"/>
+        <text class="lbl" x="660" y="197" text-anchor="middle">sentences</text>
+        <line class="ln" x1="736" y1="226" x2="584" y2="226" marker-end="url(#arr2)"/>
+        <text class="lbl" x="660" y="240" text-anchor="middle">audio chunks</text>
+
+        <!-- Gateway <-> Agent loop -->
+        <line class="ln" x1="470" y1="232" x2="470" y2="252" marker-end="url(#arr2)"/>
+        <line class="ln" x1="490" y1="252" x2="490" y2="232" marker-end="url(#arr2)"/>
+        <text class="lbl" x="500" y="246">text ↓ tokens ↑</text>
+
+        <!-- Agent loop <-> Claude API -->
+        <line class="ln" x1="584" y1="272" x2="736" y2="272" marker-start="url(#arr2)" marker-end="url(#arr2)"/>
+        <text class="lbl" x="660" y="265" text-anchor="middle">messages ↔ tokens</text>
+
+        <!-- Agent loop -> rc-mcp (orthogonal) -->
+        <polyline class="ln" points="584,292 650,292 650,338 736,338" marker-end="url(#arr2)"/>
+        <text class="lbl" x="656" y="326">MCP tools</text>
+
+        <!-- rc-mcp -> machines -->
+        <line class="ln" x1="830" y1="360" x2="830" y2="380" marker-end="url(#arr2)"/>
+        <text class="lbl m" x="838" y="374">agents</text>
+
+        <!-- Memory / Scheduler <-> Agent loop -->
+        <line class="ln" x1="426" y1="316" x2="426" y2="296" marker-start="url(#arr2)" marker-end="url(#arr2)"/>
+        <line class="ln" x1="534" y1="316" x2="534" y2="296" marker-end="url(#arr2)"/>
+        <text class="lbl m" x="542" y="310">wakes</text>
+      </svg>
+      <figcaption><b>Red is the only path that leaves the phone.</b> Everything the phone sends goes to the gateway; everything it shows comes back on the same socket. The gateway streams PCM to champi-stt and sentences to champi-tts so the agent loop only ever sees text. The scheduler wakes the loop on a cron for GPU, service, and repo checks, and anything worth saying comes back to the phone as a notification. Ideas from the share sheet land in memory through the same loop.</figcaption>
+    </figure>
+  </section>
+
+  <!-- ============ 3. VOICE TURN ============ -->
+  <section>
+    <p class="eyebrow">03 · one voice turn</p>
+    <h2>Wake to speech, and what barge-in cancels</h2>
+    <p class="lead">Only the first 150 ms happen on the phone. From wake onward the phone streams PCM and plays what comes back. Barge-in is a single cancel that runs down every lane at once.</p>
+
+    <figure>
+      <svg viewBox="0 0 960 344" role="img" aria-label="Timeline with five lanes: phone, gateway, STT, Claude, TTS. Wake word on the phone starts PCM streaming to gateway and STT. STT returns partials then a final transcript to Claude. Claude streams tokens to TTS and to the phone. TTS returns audio which the phone plays. When the user speaks over playback, barge-in cancels TTS, tokens and playback and the phone is listening again. Target from end of speech to first audio is 1.5 seconds.">
+        <defs>
+          <marker id="arr3" class="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><polygon points="0,0 10,5 0,10"/></marker>
+        </defs>
+
+        <text class="lbl m" x="940" y="32" text-anchor="end">not to scale</text>
+
+        <!-- lanes -->
+        <text class="t" x="112" y="60" text-anchor="end">Phone</text>
+        <text class="t" x="112" y="110" text-anchor="end">Gateway</text>
+        <text class="t" x="112" y="160" text-anchor="end">STT · GPU</text>
+        <text class="t" x="112" y="210" text-anchor="end">Claude</text>
+        <text class="t" x="112" y="260" text-anchor="end">TTS · GPU</text>
+        <line class="lane" x1="124" y1="56" x2="940" y2="56"/>
+        <line class="lane" x1="124" y1="106" x2="940" y2="106"/>
+        <line class="lane" x1="124" y1="156" x2="940" y2="156"/>
+        <line class="lane" x1="124" y1="206" x2="940" y2="206"/>
+        <line class="lane" x1="124" y1="256" x2="940" y2="256"/>
+
+        <!-- Phone bars -->
+        <rect class="bar" x="124" y="45" width="106" height="22"/>
+        <text class="bt" x="130" y="60">idle · wake word</text>
+        <rect class="bar" x="230" y="45" width="190" height="22"/>
+        <text class="bt" x="236" y="60">LISTENING · streams PCM</text>
+        <rect class="bar" x="560" y="45" width="100" height="22"/>
+        <text class="bt" x="566" y="60">SPEAKING · play</text>
+        <rect class="bar hot" x="660" y="45" width="120" height="22"/>
+        <text class="bt" x="666" y="60">LISTENING again</text>
+
+        <!-- wake tick + label -->
+        <line class="ln hot" x1="230" y1="38" x2="230" y2="74"/>
+        <text class="lbl hot" x="234" y="34">wake · ≤150 ms to LISTENING</text>
+        <!-- end of speech tick -->
+        <line class="ln" x1="420" y1="40" x2="420" y2="72" stroke="var(--muted)"/>
+        <text class="lbl m" x="424" y="34">VAD: end of speech</text>
+
+        <!-- Gateway bars -->
+        <rect class="bar" x="236" y="95" width="190" height="22"/>
+        <text class="bt" x="242" y="110">PCM → STT · partials ↑</text>
+        <rect class="bar" x="520" y="95" width="140" height="22"/>
+        <text class="bt" x="526" y="110">tokens + audio → phone</text>
+
+        <!-- STT bar -->
+        <rect class="bar" x="246" y="145" width="190" height="22"/>
+        <text class="bt" x="252" y="160">Whisper streaming · partials</text>
+
+        <!-- Claude bar -->
+        <rect class="bar" x="446" y="195" width="214" height="22"/>
+        <text class="bt" x="452" y="210">Opus 5 · streams tokens</text>
+
+        <!-- TTS bar -->
+        <rect class="bar" x="476" y="245" width="184" height="22"/>
+        <text class="bt" x="482" y="260">Kokoro · sentence → audio</text>
+
+        <!-- arrows -->
+        <line class="ln" x1="300" y1="67" x2="300" y2="95" marker-end="url(#arr3)"/>
+        <text class="lbl" x="305" y="85">PCM</text>
+        <line class="ln" x1="310" y1="117" x2="310" y2="145" marker-end="url(#arr3)"/>
+
+        <line class="ln d" x1="380" y1="145" x2="380" y2="117" marker-end="url(#arr3)"/>
+        <line class="ln d" x1="380" y1="95" x2="380" y2="67" marker-end="url(#arr3)"/>
+        <text class="lbl" x="385" y="85">partials</text>
+
+        <line class="ln" x1="440" y1="160" x2="440" y2="195" marker-end="url(#arr3)"/>
+        <text class="lbl" x="445" y="186">final text</text>
+
+        <line class="ln" x1="480" y1="217" x2="480" y2="245" marker-end="url(#arr3)"/>
+        <text class="lbl" x="485" y="236">sentences</text>
+
+        <line class="ln d" x1="530" y1="195" x2="530" y2="117" marker-end="url(#arr3)"/>
+        <text class="lbl" x="525" y="140" text-anchor="end">tokens</text>
+        <line class="ln d" x1="530" y1="95" x2="530" y2="67" marker-end="url(#arr3)"/>
+
+        <line class="halo" x1="560" y1="245" x2="560" y2="117"/>
+        <line class="ln" x1="560" y1="245" x2="560" y2="117" marker-end="url(#arr3)"/>
+        <text class="lbl" x="565" y="236">first audio</text>
+        <line class="ln" x1="560" y1="95" x2="560" y2="67" marker-end="url(#arr3)"/>
+
+        <!-- barge-in -->
+        <line class="ln hotd" x1="660" y1="40" x2="660" y2="276"/>
+        <text class="lbl hot" x="660" y="296" text-anchor="middle">barge-in · user speaks over playback → cancel TTS, tokens, playback → LISTENING</text>
+
+        <!-- latency bracket -->
+        <line class="ln" x1="420" y1="314" x2="560" y2="314" stroke="var(--muted)"/>
+        <line class="ln" x1="420" y1="309" x2="420" y2="319" stroke="var(--muted)"/>
+        <line class="ln" x1="560" y1="309" x2="560" y2="319" stroke="var(--muted)"/>
+        <text class="lbl m" x="490" y="334" text-anchor="middle">end of speech → first audio · target ≤ 1.5 s over LAN with GPU STT and TTS</text>
+      </svg>
+      <figcaption><b>The Claude lane stands for the agent loop calling the Claude API.</b> Partials flow back to the panel while you are still talking, so the transcript is visible before Whisper finalises. TTS starts on the first complete sentence, not the full answer, which is what keeps the 1.5 s target reachable. The dashed red line is one structured-concurrency cancel: playback, synthesis, and generation are children of the same voice scope.</figcaption>
+    </figure>
+  </section>
+
+  <!-- ============ 4. MODULES ============ -->
+  <section>
+    <p class="eyebrow">04 · module map</p>
+    <h2>What each Gradle module does in round 1</h2>
+    <p class="lead">The eleven-module layout from the spec survives. Three modules shrink, one flips from stub to centrepiece, and two wait for round 2.</p>
+
+    <div class="tablewrap">
+    <table>
+      <thead><tr><th>Module</th><th>Round 1 role</th><th>Change from spec</th></tr></thead>
+      <tbody>
+        <tr><td class="mod">:app</td><td>Foreground service, permissions, minimal settings: server address, wake word toggle</td><td>Full settings and onboarding deferred <span class="chip r2">round 2</span></td></tr>
+        <tr><td class="mod">:overlay</td><td>Bubble, drag and snap, panel, voice controls, notification open</td><td>Remote badge and routing footer removed. Header shows connected or offline.</td></tr>
+        <tr><td class="mod">:character</td><td>Rive artboard, seven states, level and attention inputs</td><td>Unchanged</td></tr>
+        <tr><td class="mod">:audio</td><td>AudioCapture, PlaybackQueue, wake word and VAD hosting, amplitude for <code>level</code></td><td>Unchanged. Echo cancellation still matters for barge-in.</td></tr>
+        <tr><td class="mod">:providers:api</td><td>Same interfaces</td><td>Unchanged. <code>SttProvider</code>, <code>LlmProvider</code>, <code>TtsProvider</code> are now implemented by one class.</td></tr>
+        <tr><td class="mod">:providers:edge</td><td>Wake word and Silero VAD only</td><td>Edge LLM, whisper.cpp, Piper deferred <span class="chip r2">round 2</span></td></tr>
+        <tr><td class="mod">:providers:remote</td><td><code>BrainClient</code>: WebSocket, auth, PCM up, audio and token streams down, reconnect</td><td><span class="chip hot">flipped</span> Was contract only with transport out of scope. Now the main provider.</td></tr>
+        <tr><td class="mod">:assistant</td><td>Turn orchestration, voice turn, barge-in, AppState, per-turn latency</td><td>Routing policy, fits heuristic, queue, context windowing removed. Brain owns memory.</td></tr>
+        <tr><td class="mod">:actions</td><td>Empty</td><td>Alarms, timers, calendar deferred <span class="chip r2">round 2</span></td></tr>
+        <tr><td class="mod">:context</td><td>Share sheet receiver into the conversation</td><td>Periodic context signals deferred <span class="chip r2">round 2</span></td></tr>
+        <tr><td class="mod">:core</td><td>AppState, DataStore, Room for transcript cache</td><td>Model storage and versioning utilities deferred <span class="chip r2">round 2</span></td></tr>
+      </tbody>
+    </table>
+    </div>
+  </section>
+
+  <!-- ============ 5. BRAIN ============ -->
+  <section>
+    <p class="eyebrow">05 · the other half</p>
+    <h2>Brain components that do not exist yet</h2>
+    <p class="lead">champi-stt, champi-tts, and rc-mcp are mature. The current champi orchestrator is a single-turn call with no tools, no history, and no memory. These five pieces turn it into the brain the phone talks to.</p>
+
+    <div class="tablewrap">
+    <table>
+      <thead><tr><th>Component</th><th>Job</th><th>Builds on</th><th>Agent-days</th></tr></thead>
+      <tbody>
+        <tr><td class="mod">gateway</td><td>Authenticated WebSocket per phone, stream broker between phone, STT and TTS, push channel</td><td>champi-stt web server, champi-ipc</td><td>2 to 3</td></tr>
+        <tr><td class="mod">agent loop</td><td>Claude with tool use, confirmations for destructive calls, streaming tokens</td><td>Claude API tool runner, rc-mcp as MCP toolset</td><td>3 to 5</td></tr>
+        <tr><td class="mod">memory</td><td>Ideas, commands, journal. Every utterance tagged and searchable. Context assembly per turn</td><td>SQLite plus embeddings, or the Claude memory tool</td><td>2 to 4</td></tr>
+        <tr><td class="mod">scheduler</td><td>Cron-fired checks on GPUs, services, repos. Findings become notifications to the phone</td><td>Sonnet 5 for cheap monitors, Opus 5 for the main loop</td><td>2 to 3</td></tr>
+        <tr><td class="mod">stt / tts services</td><td>Streaming endpoints around Whisper and Kokoro on the GPU box</td><td>champi-stt, champi-tts as they are</td><td>2 to 3</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p style="margin-top:20px">Build the brain first. It is usable from the desktop through champi-stt on day one, and every round 1 phone issue then has a real server to talk to instead of a stub. The issue split lives in <a href="https://github.com/champi-ai/champi-mobile/blob/main/docs/rounds.md">docs/rounds.md</a> on the working branch.</p>
+  </section>
+</main>
+
+</body>
+</html>
