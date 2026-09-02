@@ -37,5 +37,9 @@ gradlePlugin {
             id = "champi.android.hilt"
             implementationClass = "AndroidHiltConventionPlugin"
         }
+        register("androidCompose") {
+            id = "champi.android.compose"
+            implementationClass = "AndroidComposeConventionPlugin"
+        }
     }
 }

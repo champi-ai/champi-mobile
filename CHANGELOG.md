@@ -7,6 +7,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Phase 0 overlay skeleton: `MainActivity` (`:app`) requests `SYSTEM_ALERT_WINDOW` and `POST_NOTIFICATIONS` (Android 13+) via Compose, then starts `ChampiService`
+- `ChampiService` (`:app`) — `specialUse` foreground service with a persistent notification, shows/hides the overlay via `OverlayManager`
+- `OverlayManager` + `OverlayLifecycleOwner` (`:overlay`) — `WindowManager`-attached `ComposeView` with a manually-wired `LifecycleOwner`/`ViewModelStoreOwner`/`SavedStateRegistryOwner`, rendering a static 56dp placeholder bubble
+- `BootReceiver` (`:app`) restarts `ChampiService` after reboot if the overlay permission is still granted
+- `champi.android.compose` convention plugin wires Jetpack Compose (BOM-free, pinned `compose-ui`/`compose-material3` versions) into `:app` and `:overlay`
+- GitHub Actions workflow (`android-ci.yml`): runs `./gradlew lint` and `./gradlew assembleDebug` on every PR to `main`
+
+### Added
 - Gradle multi-module scaffold with 11 modules: `:app`, `:overlay`, `:character`, `:assistant`, `:providers:api`, `:providers:edge`, `:providers:remote`, `:audio`, `:actions`, `:context`, `:core`
 - Version catalog (`gradle/libs.versions.toml`) for centralized dependency version management
 - Convention plugins (`build-logic`) for shared Android configuration: `minSdk 29`, `targetSdk 35`, `compileSdk 35`, Kotlin 1.9.24

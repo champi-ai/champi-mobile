@@ -1,6 +1,7 @@
 plugins {
     id("champi.android.application")
     id("champi.android.hilt")
+    id("champi.android.compose")
 }
 
 android {
@@ -15,6 +16,10 @@ android {
 
 dependencies {
     implementation(project(":core"))
+    implementation(project(":overlay"))
+
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.activity.compose)
 
     androidTestImplementation(libs.hilt.android.testing)
     androidTestImplementation(libs.androidx.test.runner)
