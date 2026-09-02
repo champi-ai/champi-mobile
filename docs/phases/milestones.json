@@ -1,0 +1,10 @@
+{
+  "M0: Overlay skeleton": "phase:m0",
+  "M1: Character + interaction": "phase:m1",
+  "M2: Text-only loop": "phase:m2",
+  "M3: Voice on edge": "phase:m3",
+  "M4: Routing + remote slots": "phase:m4",
+  "M5: Notifications + actions": "phase:m5",
+  "M6: Context + profiling": "phase:m6",
+  "M7: Hardening + release": "phase:m7"
+}
