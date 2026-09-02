@@ -7,6 +7,13 @@ group = "ai.champi.buildlogic"
 java {
     sourceCompatibility = JavaVersion.VERSION_17
     targetCompatibility = JavaVersion.VERSION_17
+    toolchain {
+        languageVersion.set(JavaLanguageVersion.of(17))
+    }
+}
+
+kotlin {
+    jvmToolchain(17)
 }
 
 dependencies {
@@ -29,6 +36,10 @@ gradlePlugin {
         register("androidHilt") {
             id = "champi.android.hilt"
             implementationClass = "AndroidHiltConventionPlugin"
+        }
+        register("androidCompose") {
+            id = "champi.android.compose"
+            implementationClass = "AndroidComposeConventionPlugin"
         }
     }
 }
