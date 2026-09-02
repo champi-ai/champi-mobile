@@ -1,5 +1,6 @@
 plugins {
     id("champi.android.library")
+    id("champi.android.hilt")
 }
 
 android {

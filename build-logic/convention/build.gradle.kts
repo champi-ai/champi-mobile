@@ -12,6 +12,8 @@ java {
 dependencies {
     compileOnly(libs.android.gradlePlugin)
     compileOnly(libs.kotlin.gradlePlugin)
+    compileOnly(libs.ksp.gradlePlugin)
+    compileOnly(libs.hilt.gradlePlugin)
 }
 
 gradlePlugin {
@@ -23,6 +25,10 @@ gradlePlugin {
         register("androidLibrary") {
             id = "champi.android.library"
             implementationClass = "AndroidLibraryConventionPlugin"
+        }
+        register("androidHilt") {
+            id = "champi.android.hilt"
+            implementationClass = "AndroidHiltConventionPlugin"
         }
     }
 }
