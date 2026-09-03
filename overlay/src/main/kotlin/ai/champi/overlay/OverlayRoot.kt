@@ -10,6 +10,7 @@ import android.graphics.Rect as AndroidRect
 import android.os.SystemClock
 import android.view.Gravity
 import android.view.ViewTreeObserver
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
@@ -17,7 +18,15 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -80,6 +89,7 @@ internal fun OverlayRoot(
     var mode by remember { mutableStateOf(OverlayMode.COLLAPSED) }
     var bubbleOffset by remember { mutableStateOf(IntOffset(0, 600)) }
     var peeked by remember { mutableStateOf(false) }
+    var isDragging by remember { mutableStateOf(false) }
     var geometry by remember { mutableStateOf(QuickActionGeometry.RADIAL_ARC) }
     var imeVisible by remember { mutableStateOf(false) }
     var peekMinutes by remember { mutableStateOf(5) }
@@ -172,14 +182,13 @@ internal fun OverlayRoot(
                 )
             }
 
-            OverlayMode.COLLAPSED -> {
-                val x = when {
-                    !peeked -> bubbleOffset.x
-                    isAtStartEdge -> -(bubblePx - peekVisiblePx)
-                    else -> screenWidthPx - peekVisiblePx
-                }
-                WindowSpec(bubblePx, bubblePx, x, bubbleOffset.y, Gravity.TOP or Gravity.START)
-            }
+            // Always fullscreen rather than sized/positioned to the bubble: the bubble's own
+            // position is rendered via an internal Compose offset instead (see the COLLAPSED
+            // render branch below). This is what lets the dismiss-zone indicator render at its
+            // fixed on-screen position during a drag without ever resizing the WindowManager
+            // window mid-gesture — doing that risked the system cancelling the in-progress touch
+            // stream out from under it.
+            OverlayMode.COLLAPSED -> WindowSpec(screenWidthPx, screenHeightPx, 0, 0, Gravity.TOP or Gravity.START)
         }
     }
 
@@ -214,50 +223,99 @@ internal fun OverlayRoot(
             }
         }
 
-        OverlayMode.COLLAPSED -> Box(
-            modifier = Modifier
-                .size(BUBBLE_SIZE_DP.dp)
-                .pointerInput(Unit) {
-                    detectBubbleGestures(
-                        onTouchStart = { peeked = false },
-                        onDrag = { delta ->
-                            bubbleOffset = IntOffset(
-                                (bubbleOffset.x + delta.x.roundToInt())
-                                    .coerceIn(0, (screenWidthPx - bubblePx).coerceAtLeast(0)),
-                                (bubbleOffset.y + delta.y.roundToInt())
-                                    .coerceIn(0, (screenHeightPx - bubblePx).coerceAtLeast(0)),
-                            )
-                        },
-                        onDragEnd = {
-                            val centerX = bubbleOffset.x + bubblePx / 2
-                            val centerY = bubbleOffset.y + bubblePx / 2
-                            val inDismissZone = centerY > screenHeightPx - bubblePx * 2 &&
-                                centerX in (screenWidthPx / 2 - bubblePx)..(screenWidthPx / 2 + bubblePx)
-                            if (inDismissZone) {
-                                onDismiss()
-                            } else {
-                                val snappedX = if (centerX < screenWidthPx / 2) 0 else screenWidthPx - bubblePx
-                                val snappedY = bubbleOffset.y
-                                scope.launch { preferences.saveBubbleOffset(BubbleOffset(snappedX, snappedY)) }
-                                animationScope.launch {
-                                    Animatable(bubbleOffset.x.toFloat()).animateTo(
-                                        targetValue = snappedX.toFloat(),
-                                        animationSpec = spring(
-                                            dampingRatio = Spring.DampingRatioMediumBouncy,
-                                            stiffness = Spring.StiffnessMedium,
-                                        ),
-                                    ) {
-                                        bubbleOffset = IntOffset(value.roundToInt(), snappedY)
+        // Fullscreen (see the WindowSpec above for why) with the bubble positioned via an
+        // internal offset instead of the window's x/y, so a dismiss-zone indicator can be drawn
+        // at its fixed on-screen position during a drag without resizing the window mid-gesture.
+        OverlayMode.COLLAPSED -> Box(modifier = Modifier.fillMaxSize()) {
+            if (isDragging) {
+                val centerX = bubbleOffset.x + bubblePx / 2
+                val centerY = bubbleOffset.y + bubblePx / 2
+                val inDismissZone = centerY > screenHeightPx - bubblePx * 2 &&
+                    centerX in (screenWidthPx / 2 - bubblePx)..(screenWidthPx / 2 + bubblePx)
+                DismissZoneIndicator(
+                    highlighted = inDismissZone,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 24.dp),
+                )
+            }
+
+            val renderX = when {
+                !peeked -> bubbleOffset.x
+                isAtStartEdge -> -(bubblePx - peekVisiblePx)
+                else -> screenWidthPx - peekVisiblePx
+            }
+            Box(
+                modifier = Modifier
+                    .offset { IntOffset(renderX, bubbleOffset.y) }
+                    .size(BUBBLE_SIZE_DP.dp)
+                    .pointerInput(Unit) {
+                        detectBubbleGestures(
+                            onTouchStart = { peeked = false },
+                            onDrag = { delta ->
+                                isDragging = true
+                                bubbleOffset = IntOffset(
+                                    (bubbleOffset.x + delta.x.roundToInt())
+                                        .coerceIn(0, (screenWidthPx - bubblePx).coerceAtLeast(0)),
+                                    (bubbleOffset.y + delta.y.roundToInt())
+                                        .coerceIn(0, (screenHeightPx - bubblePx).coerceAtLeast(0)),
+                                )
+                            },
+                            onDragEnd = {
+                                isDragging = false
+                                val centerX = bubbleOffset.x + bubblePx / 2
+                                val centerY = bubbleOffset.y + bubblePx / 2
+                                val inDismissZone = centerY > screenHeightPx - bubblePx * 2 &&
+                                    centerX in (screenWidthPx / 2 - bubblePx)..(screenWidthPx / 2 + bubblePx)
+                                if (inDismissZone) {
+                                    onDismiss()
+                                } else {
+                                    val snappedX = if (centerX < screenWidthPx / 2) 0 else screenWidthPx - bubblePx
+                                    val snappedY = bubbleOffset.y
+                                    scope.launch { preferences.saveBubbleOffset(BubbleOffset(snappedX, snappedY)) }
+                                    animationScope.launch {
+                                        Animatable(bubbleOffset.x.toFloat()).animateTo(
+                                            targetValue = snappedX.toFloat(),
+                                            animationSpec = spring(
+                                                dampingRatio = Spring.DampingRatioMediumBouncy,
+                                                stiffness = Spring.StiffnessMedium,
+                                            ),
+                                        ) {
+                                            bubbleOffset = IntOffset(value.roundToInt(), snappedY)
+                                        }
                                     }
                                 }
-                            }
-                        },
-                        onTap = { mode = OverlayMode.EXPANDED },
-                        onLongPress = { mode = OverlayMode.QUICK_ACTIONS },
-                    )
-                },
-        ) {
-            CharacterPlaceholder(state = appState.characterState, size = BUBBLE_SIZE_DP.dp)
+                            },
+                            onTap = { mode = OverlayMode.EXPANDED },
+                            onLongPress = { mode = OverlayMode.QUICK_ACTIONS },
+                        )
+                    },
+            ) {
+                CharacterPlaceholder(state = appState.characterState, size = BUBBLE_SIZE_DP.dp)
+            }
+        }
+    }
+}
+
+/** Bottom-center target shown while dragging the bubble; highlights once it's inside the zone. */
+@Composable
+private fun DismissZoneIndicator(highlighted: Boolean, modifier: Modifier = Modifier) {
+    val color by animateColorAsState(
+        targetValue = if (highlighted) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.surfaceVariant,
+        label = "dismissZoneColor",
+    )
+    Surface(
+        modifier = modifier.size(if (highlighted) 72.dp else 56.dp),
+        shape = CircleShape,
+        color = color,
+        tonalElevation = 4.dp,
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                Icons.Filled.Close,
+                contentDescription = "Dismiss",
+                tint = if (highlighted) MaterialTheme.colorScheme.onError else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
