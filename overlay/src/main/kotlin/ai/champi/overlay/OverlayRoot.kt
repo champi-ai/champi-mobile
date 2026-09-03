@@ -4,8 +4,10 @@ import ai.champi.core.overlay.BubbleOffset
 import ai.champi.core.overlay.OverlayPreferencesRepository
 import ai.champi.core.overlay.QuickAction
 import ai.champi.core.overlay.QuickActionGeometry
+import ai.champi.core.overlay.SETTINGS_ACTIVITY_CLASS
 import ai.champi.core.state.AppStateHolder
 import ai.champi.core.state.CharacterState
+import android.content.Intent
 import android.graphics.Rect as AndroidRect
 import android.os.SystemClock
 import android.view.Gravity
@@ -205,7 +207,15 @@ internal fun OverlayRoot(
                 anchorEdgeIsStart = isAtStartEdge,
                 onSelect = { action ->
                     mode = OverlayMode.COLLAPSED
-                    if (action == QuickAction.SLEEP) appStateHolder.setCharacterState(CharacterState.SLEEPING)
+                    when (action) {
+                        QuickAction.SLEEP -> appStateHolder.setCharacterState(CharacterState.SLEEPING)
+                        QuickAction.SETTINGS -> view.context.startActivity(
+                            Intent()
+                                .setClassName(view.context.packageName, SETTINGS_ACTIVITY_CLASS)
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                        )
+                        QuickAction.MUTE_MIC, QuickAction.PUSH_TO_TALK -> Unit // stubs until :audio lands
+                    }
                 },
                 modifier = Modifier.align(Alignment.Center),
             )

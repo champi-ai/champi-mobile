@@ -8,8 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 - Spring animation on bubble edge-snap release (issue #10), instead of an instant jump
+- `SettingsActivity` (`:app`) — wires the quick-actions Settings target to a real screen: quick-actions geometry (radial arc / edge rail) and peek idle timeout (0-15 min, 0 disables peek), both backed by `OverlayPreferencesRepository`
 
 ### Fixed
+- Launching `SettingsActivity` via an implicit intent (custom action + manifest intent-filter) threw `ActivityNotFoundException` despite the filter being correctly registered — apps targeting API 31+ can't resolve implicit intents to a non-exported activity, even within the same app; switched to an explicit intent via `Intent.setClassName`
 - Expanded panel window never cleared `FLAG_NOT_FOCUSABLE`, so a future text-input row (issue #21) would never be able to receive keyboard focus; `WindowSpec` now carries a `focusable` bit, set for the expanded panel only
 - Peek idle timeout was a hardcoded 3-minute constant; now DataStore-backed (`peekMinutes`, default 5, 0 disables peek) and resets on any non-`IDLE` character state, not just gestures (issue #11)
 - `AppState` was missing the `attention`/`mood` fields the state-machine spec calls for (issue #9); added with setters on `AppStateHolder` — wiring `attention` to live finger position during quick-actions is left for a follow-up, since it needs the gesture detection restructured from discrete click targets to continuous drag hit-testing
