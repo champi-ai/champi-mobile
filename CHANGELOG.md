@@ -16,11 +16,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `OverlayPreferencesRepository` (`:core`) — DataStore-backed bubble position and quick-actions geometry persistence
 - Best-effort IME-visibility detection (bubble hides while another app's keyboard is open) via display-frame comparison, since the overlay window is non-focusable and can't receive real `WindowInsets` for it
 - Switched to the Compose BOM (`2026.08.00`) instead of hand-pinning individual `compose-ui`/`compose-material3` versions, after hitting a real cross-artifact version-skew bug; bumped `compileSdk`/`targetSdk` to 37 (required by Compose 1.12.0)
+- Quick-actions targets now render Material Design icons (`androidx.compose.material.icons`) instead of two-letter text abbreviations, in both the radial-arc and edge-rail geometries
 
 ### Fixed
 - `ChampiService.onStartCommand` now also calls `overlayManager.show()` (previously only `onCreate` did), so relaunching the app after dismissing the bubble actually brings it back
 - Overlay dismiss crashed the process: `onDismiss` was calling `hide()` (which removes the view) synchronously from inside that same view's still-executing touch-gesture callback; now deferred via `view.post(...)`
 - Radial quick-actions arc used raw dp magnitudes as pixel offsets in `Modifier.offset { IntOffset(...) }`, rendering the arc ~2.5x smaller than intended and putting targets outside their visible tap area
+- Quick-actions window (`QUICK_ACTIONS_WINDOW_DP`) was 220dp, too small for the 96dp-radius arc of 48dp buttons (needs ~240dp min), so targets overflowed the window and got clipped at the physical screen edge when the bubble was snapped near a corner; bumped to 280dp and confirmed on-device at the worst-case top-left-corner position
 
 ### Added
 - Phase 0 overlay skeleton: `MainActivity` (`:app`) requests `SYSTEM_ALERT_WINDOW` and `POST_NOTIFICATIONS` (Android 13+) via Compose, then starts `ChampiService`
