@@ -23,6 +23,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Overlay dismiss crashed the process: `onDismiss` was calling `hide()` (which removes the view) synchronously from inside that same view's still-executing touch-gesture callback; now deferred via `view.post(...)`
 - Radial quick-actions arc used raw dp magnitudes as pixel offsets in `Modifier.offset { IntOffset(...) }`, rendering the arc ~2.5x smaller than intended and putting targets outside their visible tap area
 - Quick-actions window (`QUICK_ACTIONS_WINDOW_DP`) was 220dp, too small for the 96dp-radius arc of 48dp buttons (needs ~240dp min), so targets overflowed the window and got clipped at the physical screen edge when the bubble was snapped near a corner; bumped to 280dp and confirmed on-device at the worst-case top-left-corner position
+- Screen bounds used for clamping (expanded panel height, quick-actions positioning, drag limits, dismiss zone) were computed from `configuration.screenHeightDp`, the *raw* display height — since this window's y-coordinate is relative to the status-bar-inset parent frame, that left ~120px of slack past the real usable bottom, letting content extend into the nav bar and get clipped there; now subtracts status/nav bar insets to get the actual usable height
 
 ### Added
 - Phase 0 overlay skeleton: `MainActivity` (`:app`) requests `SYSTEM_ALERT_WINDOW` and `POST_NOTIFICATIONS` (Android 13+) via Compose, then starts `ChampiService`
