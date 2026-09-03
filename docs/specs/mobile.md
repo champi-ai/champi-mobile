@@ -57,9 +57,9 @@ champi-android is champi on a phone. A small animated mushroom floats over every
 
 ### 2.3 Conversation panel
 - **P1** Compose bottom-sheet inside the overlay window (~60% height, resizable).
-- **P2** Message list: user/champi turns, streamed tokens, collapsed action cards (e.g. a running timer card with an undo affordance). A routing/locality footer line is shown per turn (e.g. `whisper.cpp base → local llm → piper · 0.9 s`); when the routing policy (§3.3) rejected the edge LLM and sent a turn remote, the footer states why (e.g. size) so the user understands the cost/quality tradeoff without opening settings.
+- **P2** Message list: user/champi turns, streamed tokens, collapsed action cards (e.g. a running timer card with an undo affordance). A routing/locality footer line is shown per turn (e.g. `whisper.cpp base → local llm → kokoro · 0.9 s`); when the routing policy (§3.3) rejected the edge LLM and sent a turn remote, the footer states why (e.g. size) so the user understands the cost/quality tradeoff without opening settings.
 - **P3** Input row: text field, mic (tap = toggle, hold = push-to-talk), attach (image, file, share-sheet payload).
-- **P4** Streaming TTS with a visible stop; character lip-syncs via `level`. The panel header shows the active state tag and a provider/locality tag (e.g. `edge · piper`, or a remote badge when routed remote).
+- **P4** Streaming TTS with a visible stop; character lip-syncs via `level`. The panel header shows the active state tag and a provider/locality tag (e.g. `edge · kokoro`, or a remote badge when routed remote).
 - **P5** Conversation persists locally; reopening shows where you left off.
 - **P6** Openable from: bubble tap, wake word, notification action, launcher icon, Quick Settings tile.
 
@@ -70,9 +70,9 @@ Each stage is a provider slot. Edge is the default; remote is used only when the
 |---|---|---|
 | Wake word | On-device (openWakeWord ONNX or Porcupine) | — never remote |
 | VAD / endpointing | On-device (Silero VAD) | — never remote |
-| STT | On-device (whisper.cpp small/base, or Android `SpeechRecognizer` on-device model) | Larger STT model |
+| STT | On-device (whisper.cpp small/base) | Larger STT model |
 | LLM | On-device small model for short/simple turns and local intents | Full-size model for everything else |
-| TTS | On-device (Android `TextToSpeech`, or a small neural TTS such as Piper) | Higher-quality voice |
+| TTS | On-device (Kokoro) | Higher-quality voice |
 
 - **V1** Wake word and VAD never leave the device. Audio only leaves the device after wake or explicit mic press, and only if the routing policy picked a remote provider. Onboarding (§6) and settings (§6) must state this plainly.
 - **V2** Barge-in: user speech during TTS stops playback and starts a new turn.
@@ -214,7 +214,7 @@ Rive artboard `champi_mushroom`, state machine `main`, inputs per §2.2 (`state`
 Collapsed bubble ≈ 56 dp (B7), hit target ≥ 48 dp. Peek state (B8): bubble tucks 28 dp under the snapped edge after N idle minutes. Expanded avatar and collapsed bubble share one artboard at two scales (C5); avatar renders at 96 dp in the panel header (P4).
 
 ### 6.2 Conversation panel
-Material 3 shell, follows system theme (light/dark), localized copy (es-MX, en-US). Bottom sheet ~60% height (P1). Header: 96 dp avatar, state tag, provider/locality tag (e.g. `edge · piper`, or a remote badge when routed remote), stop button. Message list: user turns right-aligned, champi turns left-aligned, inline collapsed action cards (e.g. a running timer card with undo). Routing/locality footer line per turn (e.g. `whisper.cpp base → local llm → piper · 0.9 s`), with a routing-explanation variant when a turn was rejected by the edge LLM for size and sent remote (§3.3, P2). Input row: attach / text / mic (P3).
+Material 3 shell, follows system theme (light/dark), localized copy (es-MX, en-US). Bottom sheet ~60% height (P1). Header: 96 dp avatar, state tag, provider/locality tag (e.g. `edge · kokoro`, or a remote badge when routed remote), stop button. Message list: user turns right-aligned, champi turns left-aligned, inline collapsed action cards (e.g. a running timer card with undo). Routing/locality footer line per turn (e.g. `whisper.cpp base → local llm → kokoro · 0.9 s`), with a routing-explanation variant when a turn was rejected by the edge LLM for size and sent remote (§3.3, P2). Input row: attach / text / mic (P3).
 
 ### 6.3 Long-press quick actions (B5)
 Two interaction geometries were explored during design and neither is committed — see §7 for the decision to make:
@@ -246,8 +246,8 @@ Optional earcons on wake and end-of-turn, off by default.
 
 1. Wake word engine: openWakeWord (open, trainable, needs ONNX runtime) vs Porcupine (polished, licence). Custom "hey champi" model either way.
 2. Edge LLM: which small model, which runtime (llama.cpp via JNI, MediaPipe LLM Inference, ExecuTorch), and what memory footprint is acceptable on the target devices.
-3. Edge STT: whisper.cpp vs Android's on-device `SpeechRecognizer`. Whisper is better and language-agnostic; the platform recognizer is free and already optimized. Probably ship both as providers.
-4. Edge TTS: platform `TextToSpeech` vs Piper. Piper sounds far better; costs ~50–100 MB per voice.
+3. ~~Edge STT: whisper.cpp vs Android's on-device `SpeechRecognizer`.~~ **Resolved: whisper.cpp**, via JNI (see issue #26).
+4. ~~Edge TTS: platform `TextToSpeech` vs Piper.~~ **Resolved: Kokoro** — neither of the two options originally weighed here (see issue #27).
 5. Routing heuristic thresholds — what makes a turn "heavy" enough for the remote LLM. Start conservative (edge handles short chit-chat and local intents only) and widen from logs.
 6. Conversation memory: what the edge LLM sees as context vs what the remote LLM sees, and who owns long-term memory.
 7. Quick-actions geometry (§6.3): radial arc vs edge rail. Arc reads livelier and ties more directly into `attention`; rail is easier for TalkBack. Needs a decision before M1.
