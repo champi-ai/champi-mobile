@@ -10,6 +10,9 @@ import android.graphics.Rect as AndroidRect
 import android.os.SystemClock
 import android.view.Gravity
 import android.view.ViewTreeObserver
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -23,6 +26,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -68,6 +72,10 @@ internal fun OverlayRoot(
     val density = LocalDensity.current
     val view = LocalView.current
     val configuration = LocalConfiguration.current
+    // Animatable.animateTo needs a MonotonicFrameClock, which only exists on a coroutine scope
+    // tied to the Composition — the `scope` parameter (a plain CoroutineScope from OverlayManager)
+    // doesn't have one and crashes with IllegalStateException if used for animation.
+    val animationScope = rememberCoroutineScope()
 
     var mode by remember { mutableStateOf(OverlayMode.COLLAPSED) }
     var bubbleOffset by remember { mutableStateOf(IntOffset(0, 600)) }
@@ -229,8 +237,19 @@ internal fun OverlayRoot(
                                 onDismiss()
                             } else {
                                 val snappedX = if (centerX < screenWidthPx / 2) 0 else screenWidthPx - bubblePx
-                                bubbleOffset = bubbleOffset.copy(x = snappedX)
-                                scope.launch { preferences.saveBubbleOffset(BubbleOffset(snappedX, bubbleOffset.y)) }
+                                val snappedY = bubbleOffset.y
+                                scope.launch { preferences.saveBubbleOffset(BubbleOffset(snappedX, snappedY)) }
+                                animationScope.launch {
+                                    Animatable(bubbleOffset.x.toFloat()).animateTo(
+                                        targetValue = snappedX.toFloat(),
+                                        animationSpec = spring(
+                                            dampingRatio = Spring.DampingRatioMediumBouncy,
+                                            stiffness = Spring.StiffnessMedium,
+                                        ),
+                                    ) {
+                                        bubbleOffset = IntOffset(value.roundToInt(), snappedY)
+                                    }
+                                }
                             }
                         },
                         onTap = { mode = OverlayMode.EXPANDED },
