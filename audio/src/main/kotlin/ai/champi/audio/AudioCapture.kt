@@ -98,6 +98,17 @@ class AudioCapture @Inject constructor(@ApplicationContext private val context: 
             return
         }
         record.startRecording()
+        // checkSelfPermission (pcmFlow's pre-flight check) can pass while the actual audio HAL
+        // still refuses to start the input — confirmed on-device: AudioPolicyService logs
+        // "startInput permission denied" and recordingState stays RECORDSTATE_STOPPED even
+        // though the object itself is STATE_INITIALIZED. Must check post-start, not just
+        // pre-flight, or a revoked-but-not-yet-propagated permission hangs the flow forever
+        // instead of erroring.
+        if (record.recordingState != AudioRecord.RECORDSTATE_RECORDING) {
+            record.release()
+            onError(SecurityException("AudioRecord failed to start recording (denied or unavailable)"))
+            return
+        }
         audioRecord = record
         captureJob = scope.launch {
             val buffer = ShortArray(minBufferSize)
