@@ -76,13 +76,27 @@ internal fun OverlayRoot(
     var geometry by remember { mutableStateOf(QuickActionGeometry.RADIAL_ARC) }
     var imeVisible by remember { mutableStateOf(false) }
 
+    // configuration.screenHeightDp is the *raw* display height, but this window's y-coordinate
+    // is relative to the status-bar-inset parent frame WindowManager gives it — clamping against
+    // the raw height left room for the window to extend past the real bottom of that frame, into
+    // where the nav bar sits, clipping quick-actions targets there. Subtract both system bar
+    // insets (looked up the classic way, since this overlay has no Activity decor to ask via
+    // WindowInsets) to get the actual usable bound.
     val screenWidthPx = with(density) { configuration.screenWidthDp.dp.roundToPx() }
-    val screenHeightPx = with(density) { configuration.screenHeightDp.dp.roundToPx() }
+    val rawScreenHeightPx = with(density) { configuration.screenHeightDp.dp.roundToPx() }
+    val systemBarInsetsPx = remember(view) {
+        val resources = view.resources
+        fun barHeight(name: String): Int {
+            val id = resources.getIdentifier(name, "dimen", "android")
+            return if (id > 0) resources.getDimensionPixelSize(id) else 0
+        }
+        barHeight("status_bar_height") + barHeight("navigation_bar_height")
+    }
+    val screenHeightPx = (rawScreenHeightPx - systemBarInsetsPx).coerceAtLeast(0)
     val bubblePx = with(density) { BUBBLE_SIZE_DP.dp.roundToPx() }
     val peekVisiblePx = with(density) { PEEK_VISIBLE_DP.dp.roundToPx() }
     val quickActionsPx = with(density) { QUICK_ACTIONS_WINDOW_DP.dp.roundToPx() }
-    val expandedHeightDp = configuration.screenHeightDp * EXPANDED_HEIGHT_FRACTION
-    val expandedHeightPx = with(density) { expandedHeightDp.dp.roundToPx() }
+    val expandedHeightPx = (screenHeightPx * EXPANDED_HEIGHT_FRACTION).roundToInt()
     val isAtStartEdge = bubbleOffset.x < (screenWidthPx - bubblePx) / 2
 
     LaunchedEffect(Unit) {
@@ -164,7 +178,7 @@ internal fun OverlayRoot(
         OverlayMode.EXPANDED -> ExpandedPanel(
             appState = appState,
             onCollapse = { mode = OverlayMode.COLLAPSED },
-            modifier = Modifier.fillMaxWidth().height(expandedHeightDp.dp),
+            modifier = Modifier.fillMaxWidth().height(with(density) { expandedHeightPx.toDp() }),
         )
 
         OverlayMode.QUICK_ACTIONS -> Box(modifier = Modifier.size(QUICK_ACTIONS_WINDOW_DP.dp)) {
