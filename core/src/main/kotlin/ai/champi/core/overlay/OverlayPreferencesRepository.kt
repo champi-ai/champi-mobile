@@ -49,10 +49,19 @@ class OverlayPreferencesRepository @Inject constructor(
         dataStore.edit { it[KEY_QUICK_ACTION_GEOMETRY] = geometry.name }
     }
 
+    /** Idle minutes before the bubble peeks under its snapped edge; 0 disables peek entirely. */
+    val peekMinutes: Flow<Int> = dataStore.data.map { prefs -> prefs[KEY_PEEK_MINUTES] ?: DEFAULT_PEEK_MINUTES }
+
+    suspend fun setPeekMinutes(minutes: Int) {
+        dataStore.edit { it[KEY_PEEK_MINUTES] = minutes }
+    }
+
     private companion object {
         val KEY_BUBBLE_X = intPreferencesKey("bubble_x")
         val KEY_BUBBLE_Y = intPreferencesKey("bubble_y")
         val KEY_QUICK_ACTION_GEOMETRY = stringPreferencesKey("quick_action_geometry")
+        val KEY_PEEK_MINUTES = intPreferencesKey("peek_minutes")
         const val DEFAULT_BUBBLE_Y = 600
+        const val DEFAULT_PEEK_MINUTES = 5
     }
 }

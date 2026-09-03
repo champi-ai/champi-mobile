@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- Expanded panel window never cleared `FLAG_NOT_FOCUSABLE`, so a future text-input row (issue #21) would never be able to receive keyboard focus; `WindowSpec` now carries a `focusable` bit, set for the expanded panel only
+- Peek idle timeout was a hardcoded 3-minute constant; now DataStore-backed (`peekMinutes`, default 5, 0 disables peek) and resets on any non-`IDLE` character state, not just gestures (issue #11)
+- `AppState` was missing the `attention`/`mood` fields the state-machine spec calls for (issue #9); added with setters on `AppStateHolder` — wiring `attention` to live finger position during quick-actions is left for a follow-up, since it needs the gesture detection restructured from discrete click targets to continuous drag hit-testing
+
 ### Added
 - Phase 1 character + interaction: single `WindowManager` overlay window that resizes/repositions per state (collapsed bubble / long-press quick-actions / tap-to-expand panel) — the standard "chat heads" technique, since fullscreen touch-passthrough would require the `@hide` `OnComputeInternalInsetsListener` API
 - Drag-to-move with edge-snap on release, and a bottom-center dismiss zone that hides the bubble until the app is relaunched (`OverlayRoot`, `:overlay`)

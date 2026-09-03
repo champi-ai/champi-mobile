@@ -20,6 +20,14 @@ class AppStateHolder @Inject constructor() {
         _state.update { it.copy(audioLevel = level) }
     }
 
+    fun setAttention(attention: Float) {
+        _state.update { it.copy(attention = attention.coerceIn(0f, 1f)) }
+    }
+
+    fun setMood(mood: Float) {
+        _state.update { it.copy(mood = mood.coerceIn(0f, 1f)) }
+    }
+
     fun appendConversationEntry(entry: ConversationEntry) {
         _state.update { it.copy(conversation = it.conversation + entry) }
     }
