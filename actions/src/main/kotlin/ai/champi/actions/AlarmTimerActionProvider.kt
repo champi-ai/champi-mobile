@@ -78,6 +78,9 @@ class AlarmTimerActionProvider @Inject constructor(
             receiverIntent,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
+        // receiverIntent carries both setClass and setPackage, and AlarmReceiver is exported="false" in
+        // the manifest, so it cannot reach an unspecified third party; CodeQL's Kotlin Intent model
+        // doesn't recognize either as making the intent explicit — confirmed false positive.
         alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggersAt, pendingIntent)
 
         return ToolResult(
