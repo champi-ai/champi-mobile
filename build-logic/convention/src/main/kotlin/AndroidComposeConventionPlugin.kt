@@ -31,6 +31,7 @@ class AndroidComposeConventionPlugin : Plugin<Project> {
                 add("debugImplementation", libs.findLibrary("androidx-compose-ui-tooling").get())
                 add("implementation", libs.findLibrary("androidx-compose-material3").get())
                 add("implementation", libs.findLibrary("androidx-compose-animation").get())
+                add("implementation", libs.findLibrary("androidx-compose-material-icons-extended").get())
             }
         }
     }
