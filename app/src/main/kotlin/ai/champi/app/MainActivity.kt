@@ -73,8 +73,10 @@ private fun PermissionScreen(onAllGranted: () -> Unit) {
         ActivityResultContracts.RequestPermission(),
     ) { granted -> notifGranted = granted }
 
-    LaunchedEffect(overlayGranted, notifGranted) {
-        if (overlayGranted && notifGranted) onAllGranted()
+    // Notification permission only controls whether the foreground-service notification is
+    // visible, not whether the service can run at all — so it's requested but not required.
+    LaunchedEffect(overlayGranted) {
+        if (overlayGranted) onAllGranted()
     }
 
     Column(
@@ -101,7 +103,7 @@ private fun PermissionScreen(onAllGranted: () -> Unit) {
             }
         }
 
-        if (overlayGranted && notifGranted) {
+        if (overlayGranted) {
             Text("All set — Champi is running.")
         }
     }
