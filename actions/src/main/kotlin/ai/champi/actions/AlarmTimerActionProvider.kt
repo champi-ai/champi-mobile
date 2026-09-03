@@ -66,12 +66,14 @@ class AlarmTimerActionProvider @Inject constructor(
         }
 
         val alarmId = nextAlarmId.getAndIncrement()
+        val receiverIntent = Intent(context, AlarmReceiver::class.java).apply {
+            putExtra(EXTRA_ALARM_ID, alarmId)
+            putExtra(EXTRA_LABEL, args.label)
+        }
         val pendingIntent = PendingIntent.getBroadcast(
             context,
             alarmId,
-            Intent(context, AlarmReceiver::class.java)
-                .putExtra(EXTRA_ALARM_ID, alarmId)
-                .putExtra(EXTRA_LABEL, args.label),
+            receiverIntent,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggersAt, pendingIntent)
