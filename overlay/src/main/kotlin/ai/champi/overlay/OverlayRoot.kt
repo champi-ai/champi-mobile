@@ -47,7 +47,8 @@ private const val LONG_PRESS_TIMEOUT_MS = 400L
 private const val PEEK_IDLE_TIMEOUT_MS = 3 * 60 * 1000L
 private const val BUBBLE_SIZE_DP = 56
 private const val PEEK_VISIBLE_DP = 28
-private const val QUICK_ACTIONS_WINDOW_DP = 220
+// Radial arc: 96 dp radius + 48 dp button diameter means ~240 dp min; use 280 dp to avoid edge clipping
+private const val QUICK_ACTIONS_WINDOW_DP = 280
 private const val EXPANDED_HEIGHT_FRACTION = 0.6f
 
 /**
@@ -123,6 +124,11 @@ internal fun OverlayRoot(
             )
 
             OverlayMode.QUICK_ACTIONS -> {
+                // Keep the bubble's edge of the window fixed to the bubble (so the arc, which
+                // sweeps *away* from whichever edge the bubble is snapped to, always sweeps into
+                // the screen rather than off it) and only clamp the far edge/vertical position —
+                // the window is intentionally larger than the arc's reach (see QUICK_ACTIONS_WINDOW_DP)
+                // so this alone keeps every button on-screen without needing the arc off-center.
                 val x = if (isAtStartEdge) bubbleOffset.x else bubbleOffset.x - (quickActionsPx - bubblePx)
                 val y = (bubbleOffset.y - (quickActionsPx - bubblePx) / 2)
                     .coerceIn(0, (screenHeightPx - quickActionsPx).coerceAtLeast(0))
