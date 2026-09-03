@@ -44,7 +44,6 @@ import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 private const val LONG_PRESS_TIMEOUT_MS = 400L
-private const val PEEK_IDLE_TIMEOUT_MS = 3 * 60 * 1000L
 private const val BUBBLE_SIZE_DP = 56
 private const val PEEK_VISIBLE_DP = 28
 // Radial arc: 96 dp radius + 48 dp button diameter means ~240 dp min; use 280 dp to avoid edge clipping
@@ -75,6 +74,7 @@ internal fun OverlayRoot(
     var peeked by remember { mutableStateOf(false) }
     var geometry by remember { mutableStateOf(QuickActionGeometry.RADIAL_ARC) }
     var imeVisible by remember { mutableStateOf(false) }
+    var peekMinutes by remember { mutableStateOf(5) }
 
     // configuration.screenHeightDp is the *raw* display height, but this window's y-coordinate
     // is relative to the status-bar-inset parent frame WindowManager gives it — clamping against
@@ -105,6 +105,9 @@ internal fun OverlayRoot(
     LaunchedEffect(Unit) {
         preferences.quickActionGeometry.collectLatest { geometry = it }
     }
+    LaunchedEffect(Unit) {
+        preferences.peekMinutes.collectLatest { peekMinutes = it }
+    }
 
     // Best-effort keyboard detection: this overlay window is FLAG_NOT_FOCUSABLE so it never
     // receives WindowInsets for another app's IME. Comparing the visible display frame is the
@@ -119,10 +122,15 @@ internal fun OverlayRoot(
         onDispose { view.viewTreeObserver.removeOnGlobalLayoutListener(listener) }
     }
 
-    LaunchedEffect(bubbleOffset, mode) {
+    // Resets on any gesture (bubbleOffset/mode change) and on any non-IDLE character state, per
+    // the peek spec — an in-progress conversation shouldn't have the bubble tuck itself away.
+    LaunchedEffect(bubbleOffset, mode, appState.characterState) {
         peeked = false
-        if (mode == OverlayMode.COLLAPSED) {
-            delay(PEEK_IDLE_TIMEOUT_MS)
+        if (mode == OverlayMode.COLLAPSED &&
+            appState.characterState == CharacterState.IDLE &&
+            peekMinutes > 0
+        ) {
+            delay(peekMinutes * 60_000L)
             peeked = true
         }
     }
@@ -135,6 +143,7 @@ internal fun OverlayRoot(
                 xPx = 0,
                 yPx = 0,
                 gravity = Gravity.BOTTOM or Gravity.START,
+                focusable = true,
             )
 
             OverlayMode.QUICK_ACTIONS -> {

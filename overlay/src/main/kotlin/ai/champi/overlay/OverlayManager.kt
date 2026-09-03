@@ -68,6 +68,11 @@ class OverlayManager @Inject constructor(
                     layoutParams.x = spec.xPx
                     layoutParams.y = spec.yPx
                     layoutParams.gravity = spec.gravity
+                    layoutParams.flags = if (spec.focusable) {
+                        layoutParams.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()
+                    } else {
+                        layoutParams.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                    }
                     runCatching { windowManager.updateViewLayout(view, layoutParams) }
                 },
             )
