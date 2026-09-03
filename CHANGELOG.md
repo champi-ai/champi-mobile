@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 - Spring animation on bubble edge-snap release (issue #10), instead of an instant jump
+- Visual dismiss-zone indicator while dragging the bubble (issue #11): a bottom-center target that highlights when the bubble is dragged over it — required restructuring the collapsed bubble's overlay window to always be fullscreen (bubble positioned via an internal Compose offset instead of window x/y) so the indicator has somewhere to render without resizing the window mid-gesture
 
 ### Fixed
 - Expanded panel window never cleared `FLAG_NOT_FOCUSABLE`, so a future text-input row (issue #21) would never be able to receive keyboard focus; `WindowSpec` now carries a `focusable` bit, set for the expanded panel only
