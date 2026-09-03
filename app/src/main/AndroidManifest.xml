@@ -21,6 +21,14 @@
             </intent-filter>
         </activity>
 
+        <!-- Launched via an explicit Intent.setClassName from :overlay (see
+             ai.champi.core.overlay.SETTINGS_ACTIVITY_CLASS), not an intent-filter — apps
+             targeting API 31+ can't resolve implicit intents to a non-exported activity, even
+             within the same app. -->
+        <activity
+            android:name=".SettingsActivity"
+            android:exported="false" />
+
         <service
             android:name=".ChampiService"
             android:exported="false"
