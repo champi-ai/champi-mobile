@@ -66,7 +66,9 @@ class AlarmTimerActionProvider @Inject constructor(
         }
 
         val alarmId = nextAlarmId.getAndIncrement()
-        val receiverIntent = Intent(context, AlarmReceiver::class.java).apply {
+        val receiverIntent = Intent().apply {
+            setClass(context, AlarmReceiver::class.java)
+            setPackage(context.packageName)
             putExtra(EXTRA_ALARM_ID, alarmId)
             putExtra(EXTRA_LABEL, args.label)
         }
