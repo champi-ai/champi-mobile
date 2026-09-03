@@ -1,42 +1,46 @@
 package ai.champi.overlay
 
+import ai.champi.core.overlay.OverlayPreferencesRepository
+import ai.champi.core.state.AppStateHolder
 import android.content.Context
 import android.graphics.PixelFormat
 import android.view.Gravity
 import android.view.WindowManager
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.ComposeView
-import androidx.compose.ui.unit.dp
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/** Adds/removes the static placeholder bubble overlay via [WindowManager]. */
+/**
+ * Owns the single overlay window. [OverlayRoot] renders bubble/panel/quick-actions content and
+ * reports the [WindowSpec] it currently needs; this class is the only thing that talks to
+ * [WindowManager], resizing/repositioning that one window to match — the same technique classic
+ * "chat heads" overlays use, since fullscreen-window-with-touch-region-masking requires a
+ * `@hide` platform API ([android.view.ViewTreeObserver.OnComputeInternalInsetsListener]) that
+ * isn't available in the public SDK.
+ */
 @Singleton
 class OverlayManager @Inject constructor(
     @ApplicationContext private val context: Context,
+    private val appStateHolder: AppStateHolder,
+    private val preferences: OverlayPreferencesRepository,
 ) {
     private val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
 
     private var composeView: ComposeView? = null
     private var lifecycleOwner: OverlayLifecycleOwner? = null
+    private var scope: CoroutineScope? = null
 
     fun show() {
         if (composeView != null) return
 
         val owner = OverlayLifecycleOwner()
-        val view = ComposeView(context).apply {
-            setContent { BubbleOverlay() }
-        }
-        owner.attachToView(view)
-        owner.onStart()
+        val overlayScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        scope = overlayScope
 
         val layoutParams = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -46,11 +50,30 @@ class OverlayManager @Inject constructor(
                 WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
                 WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.TRANSLUCENT,
-        ).apply {
-            gravity = Gravity.TOP or Gravity.START
-            x = 0
-            y = 200
+        ).apply { gravity = Gravity.TOP or Gravity.START }
+
+        val view = ComposeView(context)
+        view.setContent {
+            OverlayRoot(
+                appStateHolder = appStateHolder,
+                preferences = preferences,
+                scope = overlayScope,
+                // Deferred via post(): onDismiss fires from inside the bubble's own touch-event
+                // dispatch (the drag-end callback), so removing that same view synchronously
+                // here would tear down the view hierarchy mid-dispatch.
+                onDismiss = { view.post(::hide) },
+                onWindowSpecChanged = { spec ->
+                    layoutParams.width = spec.widthPx
+                    layoutParams.height = spec.heightPx
+                    layoutParams.x = spec.xPx
+                    layoutParams.y = spec.yPx
+                    layoutParams.gravity = spec.gravity
+                    runCatching { windowManager.updateViewLayout(view, layoutParams) }
+                },
+            )
         }
+        owner.attachToView(view)
+        owner.onStart()
 
         windowManager.addView(view, layoutParams)
         composeView = view
@@ -58,19 +81,11 @@ class OverlayManager @Inject constructor(
     }
 
     fun hide() {
-        composeView?.let { windowManager.removeView(it) }
+        composeView?.let { runCatching { windowManager.removeView(it) } }
         lifecycleOwner?.onDestroy()
+        scope?.cancel()
         composeView = null
         lifecycleOwner = null
+        scope = null
     }
-}
-
-@Composable
-private fun BubbleOverlay() {
-    Box(
-        modifier = Modifier
-            .size(56.dp)
-            .clip(CircleShape)
-            .background(Color(0xFF6750A4)),
-    )
 }

@@ -10,10 +10,10 @@ class AndroidApplicationConventionPlugin : Plugin<Project> {
                 apply("com.android.application")
             }
             extensions.configure<ApplicationExtension> {
-                compileSdk = 35
+                compileSdk = 37
                 defaultConfig {
                     minSdk = 29
-                    targetSdk = 35
+                    targetSdk = 37
                 }
                 compileOptions {
                     sourceCompatibility = org.gradle.api.JavaVersion.VERSION_17

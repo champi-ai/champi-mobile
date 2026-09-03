@@ -27,7 +27,12 @@ class ChampiService : Service() {
         overlayManager.show()
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // Re-shows the bubble if the user dragged it into the dismiss zone; show() is a no-op
+        // otherwise since it already checks whether the overlay view exists.
+        overlayManager.show()
+        return START_STICKY
+    }
 
     override fun onDestroy() {
         overlayManager.hide()

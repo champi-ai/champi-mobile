@@ -1,0 +1,269 @@
+package ai.champi.overlay
+
+import ai.champi.core.overlay.BubbleOffset
+import ai.champi.core.overlay.OverlayPreferencesRepository
+import ai.champi.core.overlay.QuickAction
+import ai.champi.core.overlay.QuickActionGeometry
+import ai.champi.core.state.AppStateHolder
+import ai.champi.core.state.CharacterState
+import android.graphics.Rect as AndroidRect
+import android.os.SystemClock
+import android.view.Gravity
+import android.view.ViewTreeObserver
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.ui.input.pointer.PointerInputScope
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
+
+private const val LONG_PRESS_TIMEOUT_MS = 400L
+private const val PEEK_IDLE_TIMEOUT_MS = 3 * 60 * 1000L
+private const val BUBBLE_SIZE_DP = 56
+private const val PEEK_VISIBLE_DP = 28
+private const val QUICK_ACTIONS_WINDOW_DP = 220
+private const val EXPANDED_HEIGHT_FRACTION = 0.6f
+
+/**
+ * Everything the overlay bubble/panel/quick-actions renders, plus the state machine driving it.
+ * The overlay window itself is sized to whatever's currently visible (see [OverlayManager]) —
+ * there is no fullscreen touch-passthrough trick here, since the platform API for it
+ * (`ViewTreeObserver.OnComputeInternalInsetsListener`) is `@hide` and not in the public SDK.
+ */
+@Composable
+internal fun OverlayRoot(
+    appStateHolder: AppStateHolder,
+    preferences: OverlayPreferencesRepository,
+    scope: CoroutineScope,
+    onDismiss: () -> Unit,
+    onWindowSpecChanged: (WindowSpec) -> Unit,
+) {
+    val appState by appStateHolder.state.collectAsState()
+    val density = LocalDensity.current
+    val view = LocalView.current
+    val configuration = LocalConfiguration.current
+
+    var mode by remember { mutableStateOf(OverlayMode.COLLAPSED) }
+    var bubbleOffset by remember { mutableStateOf(IntOffset(0, 600)) }
+    var peeked by remember { mutableStateOf(false) }
+    var geometry by remember { mutableStateOf(QuickActionGeometry.RADIAL_ARC) }
+    var imeVisible by remember { mutableStateOf(false) }
+
+    val screenWidthPx = with(density) { configuration.screenWidthDp.dp.roundToPx() }
+    val screenHeightPx = with(density) { configuration.screenHeightDp.dp.roundToPx() }
+    val bubblePx = with(density) { BUBBLE_SIZE_DP.dp.roundToPx() }
+    val peekVisiblePx = with(density) { PEEK_VISIBLE_DP.dp.roundToPx() }
+    val quickActionsPx = with(density) { QUICK_ACTIONS_WINDOW_DP.dp.roundToPx() }
+    val expandedHeightDp = configuration.screenHeightDp * EXPANDED_HEIGHT_FRACTION
+    val expandedHeightPx = with(density) { expandedHeightDp.dp.roundToPx() }
+    val isAtStartEdge = bubbleOffset.x < (screenWidthPx - bubblePx) / 2
+
+    LaunchedEffect(Unit) {
+        preferences.bubbleOffset.collectLatest { bubbleOffset = IntOffset(it.x, it.y) }
+    }
+    LaunchedEffect(Unit) {
+        preferences.quickActionGeometry.collectLatest { geometry = it }
+    }
+
+    // Best-effort keyboard detection: this overlay window is FLAG_NOT_FOCUSABLE so it never
+    // receives WindowInsets for another app's IME. Comparing the visible display frame is the
+    // same heuristic long-standing floating-bubble apps use; accuracy varies by OEM.
+    DisposableEffect(view) {
+        val listener = ViewTreeObserver.OnGlobalLayoutListener {
+            val rect = AndroidRect()
+            view.getWindowVisibleDisplayFrame(rect)
+            imeVisible = (screenHeightPx - rect.bottom) > screenHeightPx * 0.15
+        }
+        view.viewTreeObserver.addOnGlobalLayoutListener(listener)
+        onDispose { view.viewTreeObserver.removeOnGlobalLayoutListener(listener) }
+    }
+
+    LaunchedEffect(bubbleOffset, mode) {
+        peeked = false
+        if (mode == OverlayMode.COLLAPSED) {
+            delay(PEEK_IDLE_TIMEOUT_MS)
+            peeked = true
+        }
+    }
+
+    val windowSpec = remember(mode, bubbleOffset, peeked, isAtStartEdge, screenWidthPx, screenHeightPx) {
+        when (mode) {
+            OverlayMode.EXPANDED -> WindowSpec(
+                widthPx = screenWidthPx,
+                heightPx = expandedHeightPx,
+                xPx = 0,
+                yPx = 0,
+                gravity = Gravity.BOTTOM or Gravity.START,
+            )
+
+            OverlayMode.QUICK_ACTIONS -> {
+                val x = if (isAtStartEdge) bubbleOffset.x else bubbleOffset.x - (quickActionsPx - bubblePx)
+                val y = (bubbleOffset.y - (quickActionsPx - bubblePx) / 2)
+                    .coerceIn(0, (screenHeightPx - quickActionsPx).coerceAtLeast(0))
+                WindowSpec(
+                    widthPx = quickActionsPx,
+                    heightPx = quickActionsPx,
+                    xPx = x.coerceIn(0, (screenWidthPx - quickActionsPx).coerceAtLeast(0)),
+                    yPx = y,
+                    gravity = Gravity.TOP or Gravity.START,
+                )
+            }
+
+            OverlayMode.COLLAPSED -> {
+                val x = when {
+                    !peeked -> bubbleOffset.x
+                    isAtStartEdge -> -(bubblePx - peekVisiblePx)
+                    else -> screenWidthPx - peekVisiblePx
+                }
+                WindowSpec(bubblePx, bubblePx, x, bubbleOffset.y, Gravity.TOP or Gravity.START)
+            }
+        }
+    }
+
+    SideEffect { if (!imeVisible) onWindowSpecChanged(windowSpec) }
+
+    if (imeVisible) return
+
+    when (mode) {
+        // There's no "tap outside the panel" region to detect here: this window covers only the
+        // bottom EXPANDED_HEIGHT_FRACTION of the screen (see the class doc on why — no fullscreen
+        // touch-passthrough trick is available), so the panel already fills 100% of it. Collapse
+        // is reachable within our own bounds via a background tap or swipe-down instead.
+        OverlayMode.EXPANDED -> ExpandedPanel(
+            appState = appState,
+            onCollapse = { mode = OverlayMode.COLLAPSED },
+            modifier = Modifier.fillMaxWidth().height(expandedHeightDp.dp),
+        )
+
+        OverlayMode.QUICK_ACTIONS -> Box(modifier = Modifier.size(QUICK_ACTIONS_WINDOW_DP.dp)) {
+            QuickActionsLayer(
+                visible = true,
+                geometry = geometry,
+                anchorEdgeIsStart = isAtStartEdge,
+                onSelect = { action ->
+                    mode = OverlayMode.COLLAPSED
+                    if (action == QuickAction.SLEEP) appStateHolder.setCharacterState(CharacterState.SLEEPING)
+                },
+                modifier = Modifier.align(Alignment.Center),
+            )
+            Box(modifier = Modifier.align(if (isAtStartEdge) Alignment.TopStart else Alignment.TopEnd)) {
+                CharacterPlaceholder(state = appState.characterState, size = BUBBLE_SIZE_DP.dp)
+            }
+        }
+
+        OverlayMode.COLLAPSED -> Box(
+            modifier = Modifier
+                .size(BUBBLE_SIZE_DP.dp)
+                .pointerInput(Unit) {
+                    detectBubbleGestures(
+                        onTouchStart = { peeked = false },
+                        onDrag = { delta ->
+                            bubbleOffset = IntOffset(
+                                (bubbleOffset.x + delta.x.roundToInt())
+                                    .coerceIn(0, (screenWidthPx - bubblePx).coerceAtLeast(0)),
+                                (bubbleOffset.y + delta.y.roundToInt())
+                                    .coerceIn(0, (screenHeightPx - bubblePx).coerceAtLeast(0)),
+                            )
+                        },
+                        onDragEnd = {
+                            val centerX = bubbleOffset.x + bubblePx / 2
+                            val centerY = bubbleOffset.y + bubblePx / 2
+                            val inDismissZone = centerY > screenHeightPx - bubblePx * 2 &&
+                                centerX in (screenWidthPx / 2 - bubblePx)..(screenWidthPx / 2 + bubblePx)
+                            if (inDismissZone) {
+                                onDismiss()
+                            } else {
+                                val snappedX = if (centerX < screenWidthPx / 2) 0 else screenWidthPx - bubblePx
+                                bubbleOffset = bubbleOffset.copy(x = snappedX)
+                                scope.launch { preferences.saveBubbleOffset(BubbleOffset(snappedX, bubbleOffset.y)) }
+                            }
+                        },
+                        onTap = { mode = OverlayMode.EXPANDED },
+                        onLongPress = { mode = OverlayMode.QUICK_ACTIONS },
+                    )
+                },
+        ) {
+            CharacterPlaceholder(state = appState.characterState, size = BUBBLE_SIZE_DP.dp)
+        }
+    }
+}
+
+/**
+ * Disambiguates tap / drag / long-press on a single pointer stream. Compose's built-in
+ * `detectTapGestures`/`detectDragGestures` can't be combined on one target since both would
+ * race for the same down event, so this races a long-press timer against incoming pointer
+ * events by hand.
+ */
+private suspend fun PointerInputScope.detectBubbleGestures(
+    onTouchStart: () -> Unit,
+    onDrag: (Offset) -> Unit,
+    onDragEnd: () -> Unit,
+    onTap: () -> Unit,
+    onLongPress: () -> Unit,
+) = awaitEachGesture {
+    val down = awaitFirstDown(requireUnconsumed = false)
+    onTouchStart()
+    val downUptimeMillis = SystemClock.uptimeMillis()
+    var dragging = false
+    var longPressFired = false
+    var totalDrag = Offset.Zero
+    val slop = viewConfiguration.touchSlop
+
+    while (true) {
+        // AwaitPointerEventScope is @RestrictsSuspension, so a long-press timer can't run as a
+        // separate launched coroutine racing this loop (as detectTapGestures-style code usually
+        // would) — instead, wrap the *wait for the next event* itself in a timeout: null means
+        // the finger has been held still for the remaining budget, i.e. a long press.
+        val remaining = LONG_PRESS_TIMEOUT_MS - (SystemClock.uptimeMillis() - downUptimeMillis)
+        val event = if (!dragging && !longPressFired && remaining > 0) {
+            withTimeoutOrNull(remaining) { awaitPointerEvent() }
+        } else {
+            awaitPointerEvent()
+        }
+        if (event == null) {
+            longPressFired = true
+            onLongPress()
+            continue
+        }
+        val change = event.changes.firstOrNull { it.id == down.id } ?: break
+        if (!change.pressed) {
+            if (dragging) onDragEnd() else if (!longPressFired) onTap()
+            break
+        }
+        val delta = change.positionChange()
+        totalDrag += delta
+        if (!dragging && totalDrag.getDistance() > slop) {
+            dragging = true
+        }
+        if (dragging) {
+            change.consume()
+            onDrag(delta)
+        }
+    }
+}

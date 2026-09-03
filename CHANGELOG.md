@@ -7,11 +7,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Phase 1 character + interaction: single `WindowManager` overlay window that resizes/repositions per state (collapsed bubble / long-press quick-actions / tap-to-expand panel) — the standard "chat heads" technique, since fullscreen touch-passthrough would require the `@hide` `OnComputeInternalInsetsListener` API
+- Drag-to-move with edge-snap on release, and a bottom-center dismiss zone that hides the bubble until the app is relaunched (`OverlayRoot`, `:overlay`)
+- Tap-to-expand bottom panel (60% screen height) with a placeholder "no conversation yet" state; collapses on background tap or swipe-down (`ExpandedPanel`, `:overlay`)
+- Long-press quick-actions surface with both geometries from the open design question implemented (`QuickActionsLayer`, `:overlay`): radial arc (default) and edge rail, selectable via a persisted `OverlayPreferencesRepository` preference once a settings UI exists
+- `CharacterPlaceholder` (`:overlay`) — animated stand-in for the Rive `champi_mushroom` artboard; color/pulse speed vary across all 7 `CharacterState` values
+- `AppState`/`AppStateHolder`/`CharacterState` (`:core`) — shared app state `StateFlow`
+- `OverlayPreferencesRepository` (`:core`) — DataStore-backed bubble position and quick-actions geometry persistence
+- Best-effort IME-visibility detection (bubble hides while another app's keyboard is open) via display-frame comparison, since the overlay window is non-focusable and can't receive real `WindowInsets` for it
+- Switched to the Compose BOM (`2026.08.00`) instead of hand-pinning individual `compose-ui`/`compose-material3` versions, after hitting a real cross-artifact version-skew bug; bumped `compileSdk`/`targetSdk` to 37 (required by Compose 1.12.0)
+
+### Fixed
+- `ChampiService.onStartCommand` now also calls `overlayManager.show()` (previously only `onCreate` did), so relaunching the app after dismissing the bubble actually brings it back
+- Overlay dismiss crashed the process: `onDismiss` was calling `hide()` (which removes the view) synchronously from inside that same view's still-executing touch-gesture callback; now deferred via `view.post(...)`
+- Radial quick-actions arc used raw dp magnitudes as pixel offsets in `Modifier.offset { IntOffset(...) }`, rendering the arc ~2.5x smaller than intended and putting targets outside their visible tap area
+
+### Added
 - Phase 0 overlay skeleton: `MainActivity` (`:app`) requests `SYSTEM_ALERT_WINDOW` and `POST_NOTIFICATIONS` (Android 13+) via Compose, then starts `ChampiService`
 - `ChampiService` (`:app`) — `specialUse` foreground service with a persistent notification, shows/hides the overlay via `OverlayManager`
 - `OverlayManager` + `OverlayLifecycleOwner` (`:overlay`) — `WindowManager`-attached `ComposeView` with a manually-wired `LifecycleOwner`/`ViewModelStoreOwner`/`SavedStateRegistryOwner`, rendering a static 56dp placeholder bubble
 - `BootReceiver` (`:app`) restarts `ChampiService` after reboot if the overlay permission is still granted
-- `champi.android.compose` convention plugin wires Jetpack Compose (BOM-free, pinned `compose-ui`/`compose-material3` versions) into `:app` and `:overlay`
+- `champi.android.compose` convention plugin wires Jetpack Compose (Compose BOM) into `:app` and `:overlay`
 - GitHub Actions workflow (`android-ci.yml`): runs `./gradlew lint` and `./gradlew assembleDebug` on every PR to `main`
 
 ### Added
