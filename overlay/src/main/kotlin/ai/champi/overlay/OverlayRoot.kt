@@ -41,6 +41,10 @@ import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.onLongClick
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
@@ -227,6 +231,22 @@ internal fun OverlayRoot(
         OverlayMode.COLLAPSED -> Box(
             modifier = Modifier
                 .size(BUBBLE_SIZE_DP.dp)
+                // TalkBack synthesizes double-tap/two-finger-double-tap into semantics click
+                // actions rather than replaying raw touch events, so the custom gesture detector
+                // below (needed to disambiguate tap/drag/long-press on one pointer stream) is
+                // invisible to it without these — without this block, TalkBack could describe the
+                // bubble but never actually activate it.
+                .semantics {
+                    contentDescription = "Champi assistant"
+                    onClick(label = "Open conversation") {
+                        mode = OverlayMode.EXPANDED
+                        true
+                    }
+                    onLongClick(label = "Open quick actions") {
+                        mode = OverlayMode.QUICK_ACTIONS
+                        true
+                    }
+                }
                 .pointerInput(Unit) {
                     detectBubbleGestures(
                         onTouchStart = { peeked = false },

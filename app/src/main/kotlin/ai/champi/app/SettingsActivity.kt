@@ -24,6 +24,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
@@ -109,7 +111,10 @@ private fun SettingsScreen(preferences: OverlayPreferencesRepository) {
             onValueChange = { scope.launch { preferences.setPeekMinutes(it.toInt()) } },
             valueRange = 0f..15f,
             steps = 14,
-            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 8.dp)
+                .semantics { contentDescription = "Bubble peek idle timeout in minutes, 0 disables" },
         )
     }
 }

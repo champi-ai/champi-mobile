@@ -18,6 +18,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 
 private const val SWIPE_DOWN_DISMISS_THRESHOLD_DP = 48
@@ -33,55 +36,82 @@ fun ExpandedPanel(appState: AppState, onCollapse: () -> Unit, modifier: Modifier
     val dismissThresholdPx = with(density) { SWIPE_DOWN_DISMISS_THRESHOLD_DP.dp.toPx() }
 
     Surface(
-        modifier = modifier
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-            ) { onCollapse() }
-            .pointerInput(Unit) {
-                var totalDragY = 0f
-                detectVerticalDragGestures(
-                    onDragStart = { totalDragY = 0f },
-                    onDragEnd = { if (totalDragY > dismissThresholdPx) onCollapse() },
-                ) { change, dragAmount ->
-                    change.consume()
-                    totalDragY += dragAmount
-                }
-            },
+        modifier = modifier,
         shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
         color = MaterialTheme.colorScheme.surface,
         tonalElevation = 8.dp,
     ) {
-        Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            // Background layer for the tap/swipe-to-collapse convenience gesture, sitting behind
+            // the real content below. Keeping this a separate layer (rather than wrapping the
+            // whole Column in .clickable, as before) matters once #21 adds real interactive
+            // controls in here: an ancestor .clickable merges all *non-interactive* descendant
+            // semantics into one giant TalkBack node, which would swallow plain Text/Icon content
+            // even though a genuinely interactive descendant survives the merge — better not to
+            // rely on that distinction at all. Excluded from the semantics tree since the
+            // dedicated "Close panel" handle below already exposes an accessible equivalent.
             Box(
                 modifier = Modifier
-                    .align(Alignment.CenterHorizontally)
-                    .size(width = 32.dp, height = 4.dp)
-                    .background(MaterialTheme.colorScheme.onSurfaceVariant, CircleShape),
+                    .fillMaxSize()
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) { onCollapse() }
+                    .pointerInput(Unit) {
+                        var totalDragY = 0f
+                        detectVerticalDragGestures(
+                            onDragStart = { totalDragY = 0f },
+                            onDragEnd = { if (totalDragY > dismissThresholdPx) onCollapse() },
+                        ) { change, dragAmount ->
+                            change.consume()
+                            totalDragY += dragAmount
+                        }
+                    }
+                    .clearAndSetSemantics {},
             )
-            Spacer(Modifier.height(12.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                CharacterPlaceholder(state = appState.characterState, size = 96.dp)
-                Text("Champi", style = MaterialTheme.typography.titleMedium)
-            }
-            Spacer(Modifier.height(16.dp))
-            if (appState.conversation.isEmpty()) {
+
+            Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
                 Box(
-                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    modifier = Modifier
+                        .align(Alignment.CenterHorizontally)
+                        .size(48.dp)
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                        ) { onCollapse() }
+                        .semantics { contentDescription = "Close panel" },
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text(
-                        "No conversation yet.",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    Box(
+                        modifier = Modifier
+                            .size(width = 32.dp, height = 4.dp)
+                            .background(MaterialTheme.colorScheme.onSurfaceVariant, CircleShape),
                     )
                 }
-            } else {
-                LazyColumn(modifier = Modifier.weight(1f)) {
-                    items(appState.conversation) { entry -> Text(entry.text) }
+                Spacer(Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    CharacterPlaceholder(state = appState.characterState, size = 96.dp)
+                    Text("Champi", style = MaterialTheme.typography.titleMedium)
+                }
+                Spacer(Modifier.height(16.dp))
+                if (appState.conversation.isEmpty()) {
+                    Box(
+                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            "No conversation yet.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                } else {
+                    LazyColumn(modifier = Modifier.weight(1f)) {
+                        items(appState.conversation) { entry -> Text(entry.text) }
+                    }
                 }
             }
         }

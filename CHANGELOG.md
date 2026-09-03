@@ -9,9 +9,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 - Spring animation on bubble edge-snap release (issue #10), instead of an instant jump
 - `SettingsActivity` (`:app`) — wires the quick-actions Settings target to a real screen: quick-actions geometry (radial arc / edge rail) and peek idle timeout (0-15 min, 0 disables peek), both backed by `OverlayPreferencesRepository`
+- Partial TalkBack accessibility (issue #58, remainder blocked on #31/#44 which don't exist yet): bubble now has `contentDescription` plus semantic click/long-click actions mirroring its custom gesture detector, which was otherwise invisible to TalkBack; expanded panel gained a real 48dp "Close panel" button (replacing a 32x4dp non-focusable decorative bar); Settings screen's peek-timeout slider gained a `contentDescription`
 
 ### Fixed
 - Launching `SettingsActivity` via an implicit intent (custom action + manifest intent-filter) threw `ActivityNotFoundException` despite the filter being correctly registered — apps targeting API 31+ can't resolve implicit intents to a non-exported activity, even within the same app; switched to an explicit intent via `Intent.setClassName`
+- `MainActivity` required both overlay and notification permission before starting `ChampiService`, contradicting the spec: denying `POST_NOTIFICATIONS` should omit the visible notification, not block the service from running at all; gated on overlay permission alone
+- Expanded panel's collapse-on-tap gesture wrapped the entire content `Column` in `.clickable`, which merges all non-interactive descendant semantics into one TalkBack node — harmless today but a trap for issue #21's future input row; moved onto a dedicated background layer instead
 - Expanded panel window never cleared `FLAG_NOT_FOCUSABLE`, so a future text-input row (issue #21) would never be able to receive keyboard focus; `WindowSpec` now carries a `focusable` bit, set for the expanded panel only
 - Peek idle timeout was a hardcoded 3-minute constant; now DataStore-backed (`peekMinutes`, default 5, 0 disables peek) and resets on any non-`IDLE` character state, not just gestures (issue #11)
 - `AppState` was missing the `attention`/`mood` fields the state-machine spec calls for (issue #9); added with setters on `AppStateHolder` — wiring `attention` to live finger position during quick-actions is left for a follow-up, since it needs the gesture detection restructured from discrete click targets to continuous drag hit-testing
