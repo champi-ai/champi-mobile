@@ -3,12 +3,13 @@ package ai.champi.core.persistence
 import androidx.room.testing.MigrationTestHelper
 import androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory
 import androidx.test.platform.app.InstrumentationRegistry
+import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 
 private const val TEST_DB = "migration-test"
 
-/** Acceptance criteria for issue #16 and #32: schema migrations complete without data loss. */
+/** Acceptance criteria for issues #16, #32, and #34: schema migrations complete without data loss. */
 class MigrationTest {
 
     @get:Rule
@@ -49,6 +50,24 @@ class MigrationTest {
         )
         val cursor = db.query("SELECT * FROM queued_turns")
         assert(cursor.count == 1)
+        cursor.close()
+    }
+
+    @Test
+    fun migrate3To4AddsRoutingDecisionsTable() {
+        helper.createDatabase(TEST_DB, 3).apply {
+            execSQL(
+                "INSERT INTO conversations (id, createdAt, updatedAt, title) VALUES ('c1', 0, 0, NULL)",
+            )
+            close()
+        }
+
+        val db = helper.runMigrationsAndValidate(TEST_DB, 4, true, MIGRATION_3_4)
+        db.execSQL(
+            "INSERT INTO routing_decisions (timestamp, stage, selectedProviderId, locality, reason, inputTokenEstimate) VALUES (1000, 'LLM', 'remote-llm', 'REMOTE', 'REMOTE_FALLBACK', 5)",
+        )
+        val cursor = db.query("SELECT * FROM routing_decisions")
+        assertEquals(1, cursor.count)
         cursor.close()
     }
 }
