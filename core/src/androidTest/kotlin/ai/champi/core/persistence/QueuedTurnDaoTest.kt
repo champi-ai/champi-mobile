@@ -12,7 +12,7 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 
-/** Acceptance criterion for issue #32: QueuedTurnEntity round-trips through insert/query/delete. */
+/** Acceptance criteria for issues #32 and #35: QueuedTurnEntity round-trips through insert/query/delete/update. */
 @RunWith(AndroidJUnit4::class)
 class QueuedTurnDaoTest {
 
@@ -95,5 +95,31 @@ class QueuedTurnDaoTest {
 
         assertEquals("/data/user/0/ai.champi/cache/turn_1.pcm", oldest.inputAudioPath)
         assertEquals(2, oldest.retryCount)
+    }
+
+    @Test
+    fun messageCountAtEnqueueRoundTrips() = runBlocking {
+        dao.insert(
+            QueuedTurnEntity(
+                conversationId = "c1",
+                inputText = "with count",
+                enqueuedAt = 1_000L,
+                messageCountAtEnqueue = 7,
+            ),
+        )
+
+        val oldest = dao.getOldest()!!
+        assertEquals(7, oldest.messageCountAtEnqueue)
+    }
+
+    @Test
+    fun updateIncrementsRetryCount() = runBlocking {
+        dao.insert(QueuedTurnEntity(conversationId = "c1", inputText = "retry me", enqueuedAt = 1_000L))
+
+        val inserted = dao.getOldest()!!
+        dao.update(inserted.copy(retryCount = inserted.retryCount + 1))
+
+        val updated = dao.getOldest()!!
+        assertEquals(1, updated.retryCount)
     }
 }

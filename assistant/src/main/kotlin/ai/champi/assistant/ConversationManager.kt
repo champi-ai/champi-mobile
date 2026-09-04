@@ -46,6 +46,35 @@ class ConversationManager @Inject constructor(
     suspend fun appendAssistantMessage(text: String, providerMetadata: String? = null) =
         appendMessage(MessageRole.ASSISTANT, text, providerMetadata)
 
+    /** Appends a system-level note that is not user-authored and not an assistant response. */
+    suspend fun appendSystemMessage(text: String) = appendMessage(MessageRole.SYSTEM, text)
+
+    /**
+     * Returns the active conversation's ID, initializing the conversation if this is the first
+     * call. The ID is stable for the lifetime of the conversation (until [clearConversation] runs).
+     */
+    suspend fun getActiveConversationId(): String {
+        ensureInitialized()
+        return activeConversationId.value ?: error("conversation not initialized")
+    }
+
+    /**
+     * Returns the current number of messages in the active conversation. Useful for snapshotting
+     * at enqueue time so the replay worker can detect a stale context window.
+     */
+    suspend fun getMessageCount(): Int {
+        ensureInitialized()
+        val id = activeConversationId.value ?: return 0
+        return dao.getMessageCount(id)
+    }
+
+    /**
+     * Returns the number of messages in [conversationId], without requiring that conversation to
+     * be the active one. Used by the replay worker to check staleness against a queued turn's
+     * stored conversation ID.
+     */
+    suspend fun getMessageCount(conversationId: String): Int = dao.getMessageCount(conversationId)
+
     /** Deletes the active conversation's messages and starts a fresh one. */
     suspend fun clearConversation() {
         ensureInitialized()

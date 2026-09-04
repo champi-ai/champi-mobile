@@ -13,4 +13,10 @@ data class QueuedTurnEntity(
     /** Epoch millis at which the turn was enqueued. */
     val enqueuedAt: Long,
     val retryCount: Int = 0,
+    /**
+     * Number of messages in the conversation at enqueue time. Used to detect a stale context
+     * window: if the conversation has grown by more than [STALE_CONTEXT_THRESHOLD] messages since
+     * the turn was queued, replay shows a system note instead of re-submitting the original input.
+     */
+    val messageCountAtEnqueue: Int = 0,
 )

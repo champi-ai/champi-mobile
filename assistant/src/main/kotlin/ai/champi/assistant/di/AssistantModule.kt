@@ -17,10 +17,8 @@ import javax.inject.Singleton
 object AssistantModule {
     /**
      * Provides [RoutingPolicy] by wrapping the currently registered single-instance providers into
-     * lists. This avoids requiring Hilt multibinding setup (which would conflict with the existing
-     * `@Binds` declarations for the single-provider bindings used by [ai.champi.assistant.TurnOrchestrator]).
-     * When additional provider implementations are registered in future issues, update this method
-     * to include them in the lists.
+     * lists. This avoids requiring Hilt multibinding setup. When additional provider implementations
+     * are registered in future issues, update this method to include them in the lists.
      */
     @Provides
     @Singleton
