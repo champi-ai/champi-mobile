@@ -84,6 +84,14 @@ internal fun OverlayRoot(
     val animationScope = rememberCoroutineScope()
 
     var mode by remember { mutableStateOf(OverlayMode.COLLAPSED) }
+    val openPanelRequestId by appStateHolder.openPanelRequestId.collectAsState()
+    var lastHandledOpenPanelRequestId by remember { mutableStateOf(0L) }
+    LaunchedEffect(openPanelRequestId) {
+        if (openPanelRequestId != lastHandledOpenPanelRequestId) {
+            lastHandledOpenPanelRequestId = openPanelRequestId
+            mode = OverlayMode.EXPANDED
+        }
+    }
     var bubbleOffset by remember { mutableStateOf(IntOffset(0, 600)) }
     var peeked by remember { mutableStateOf(false) }
     var geometry by remember { mutableStateOf(QuickActionGeometry.RADIAL_ARC) }

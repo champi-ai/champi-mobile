@@ -1,5 +1,6 @@
 package ai.champi.actions
 
+import ai.champi.core.actions.ActionSettingsRepository
 import ai.champi.providers.api.ToolCall
 import android.app.AlarmManager
 import android.os.Build
@@ -27,7 +28,8 @@ import org.junit.runner.RunWith
 class AlarmTimerActionProviderTest {
 
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
-    private val provider = AlarmTimerActionProvider(context)
+    private val settings = ActionSettingsRepository(context)
+    private val provider = AlarmTimerActionProvider(context, settings)
     private val json = Json { ignoreUnknownKeys = true }
 
     private val exactAlarmsAllowed: Boolean
@@ -87,6 +89,19 @@ class AlarmTimerActionProviderTest {
             ToolCall(id = "4", name = "set_timer", argumentsJson = "not json"),
         )
         assertTrue(result.isError)
+    }
+
+    @Test
+    fun disabledSettingReturnsAnErrorInsteadOfScheduling() = runBlocking {
+        settings.setAlarmActionsEnabled(false)
+        try {
+            val result = provider.invoke(
+                ToolCall(id = "5", name = "set_timer", argumentsJson = """{"hours":0,"minutes":1}"""),
+            )
+            assertTrue(result.isError)
+        } finally {
+            settings.setAlarmActionsEnabled(true)
+        }
     }
 
     @Test

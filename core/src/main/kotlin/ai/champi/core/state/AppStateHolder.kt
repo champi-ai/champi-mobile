@@ -12,6 +12,17 @@ class AppStateHolder @Inject constructor() {
     private val _state = MutableStateFlow(AppState())
     val state: StateFlow<AppState> = _state
 
+    // Nonce rather than a plain event: StateFlow always replays its current value to a fresh
+    // collector, so a request issued a moment before the overlay composes (e.g. a Quick Settings
+    // tile tap racing service startup) still lands instead of being lost the way a bare
+    // SharedFlow's non-replayed emission would be.
+    private val _openPanelRequestId = MutableStateFlow(0L)
+    val openPanelRequestId: StateFlow<Long> = _openPanelRequestId
+
+    fun requestOpenPanel() {
+        _openPanelRequestId.update { it + 1 }
+    }
+
     fun setCharacterState(characterState: CharacterState) {
         _state.update { it.copy(characterState = characterState) }
     }
