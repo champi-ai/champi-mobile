@@ -10,6 +10,9 @@ interface MessageDao {
     @Insert
     suspend fun insertConversation(conversation: ConversationEntity)
 
+    @Query("SELECT * FROM conversations ORDER BY updatedAt DESC LIMIT 1")
+    suspend fun getMostRecentConversation(): ConversationEntity?
+
     @Insert
     suspend fun insertMessage(message: MessageEntity)
 
