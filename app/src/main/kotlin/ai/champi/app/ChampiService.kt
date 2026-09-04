@@ -1,5 +1,6 @@
 package ai.champi.app
 
+import ai.champi.assistant.QueueReplayWorker
 import ai.champi.overlay.OverlayManager
 import android.app.Notification
 import android.app.NotificationChannel
@@ -9,6 +10,10 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.IBinder
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import javax.inject.Inject
 
 /** Foreground service that keeps the placeholder overlay bubble alive. */
@@ -16,6 +21,9 @@ import javax.inject.Inject
 class ChampiService : Service() {
 
     @Inject lateinit var overlayManager: OverlayManager
+    @Inject lateinit var queueReplayWorker: QueueReplayWorker
+
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     override fun onCreate() {
         super.onCreate()
@@ -25,6 +33,7 @@ class ChampiService : Service() {
             ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
         )
         overlayManager.show()
+        queueReplayWorker.start(serviceScope)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -35,6 +44,8 @@ class ChampiService : Service() {
     }
 
     override fun onDestroy() {
+        queueReplayWorker.stop()
+        serviceScope.cancel()
         overlayManager.hide()
         super.onDestroy()
     }

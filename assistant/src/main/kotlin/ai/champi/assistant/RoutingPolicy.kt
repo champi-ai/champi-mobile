@@ -145,6 +145,19 @@ class RoutingPolicy(
     }
 
     /**
+     * Returns `true` if at least one enabled LLM provider (edge or remote) is currently
+     * `available()`. Used by [ai.champi.assistant.QueueReplayWorker] to cheaply check whether a
+     * drain attempt is worth starting before calling [selectLlm].
+     */
+    suspend fun hasAvailableLlm(): Boolean {
+        val edgeLlmEnabled = routingSettingsRepository.edgeLlmEnabled.first()
+        val remoteLlmEnabled = routingSettingsRepository.remoteLlmEnabled.first()
+        val edgeCandidates = llmProviders.filter { it.locality == Locality.EDGE && edgeLlmEnabled }
+        val remoteCandidates = llmProviders.filter { it.locality == Locality.REMOTE && remoteLlmEnabled }
+        return (edgeCandidates + remoteCandidates).any { it.available() }
+    }
+
+    /**
      * Returns `true` when the edge candidate's declared [ai.champi.providers.api.ProviderCapabilities]
      * can accommodate both the current context and the new input. The heuristic: total estimated
      * tokens (context + input) must be below [FITS_BUDGET_FRACTION] of the provider's

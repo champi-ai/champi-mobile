@@ -9,7 +9,7 @@ import org.junit.Test
 
 private const val TEST_DB = "migration-test"
 
-/** Acceptance criteria for issues #16, #32, #34, and #46: schema migrations complete without data loss. */
+/** Acceptance criteria for issues #16, #32, #34, #46, and #35: schema migrations complete without data loss. */
 class MigrationTest {
 
     @get:Rule
@@ -103,5 +103,36 @@ class MigrationTest {
         cur2.moveToFirst()
         assert(cur2.getString(0) == "IMAGE")
         cur2.close()
+    }
+
+    @Test
+    fun migrate5To6AddsMessageCountAtEnqueueColumn() {
+        helper.createDatabase(TEST_DB, 5).apply {
+            execSQL(
+                "INSERT INTO conversations (id, createdAt, updatedAt, title) VALUES ('c1', 0, 0, NULL)",
+            )
+            execSQL(
+                "INSERT INTO queued_turns (conversationId, inputText, inputAudioPath, enqueuedAt, retryCount) VALUES ('c1', 'hello', NULL, 1000, 0)",
+            )
+            close()
+        }
+
+        val db = helper.runMigrationsAndValidate(TEST_DB, 6, true, MIGRATION_5_6)
+
+        // Existing row survives migration; messageCountAtEnqueue defaults to 0.
+        val cursor = db.query("SELECT messageCountAtEnqueue FROM queued_turns")
+        assertEquals(1, cursor.count)
+        cursor.moveToFirst()
+        assertEquals(0, cursor.getInt(0))
+        cursor.close()
+
+        // New rows can include the column.
+        db.execSQL(
+            "INSERT INTO queued_turns (conversationId, inputText, inputAudioPath, enqueuedAt, retryCount, messageCountAtEnqueue) VALUES ('c1', 'world', NULL, 2000, 0, 5)",
+        )
+        val cursor2 = db.query("SELECT messageCountAtEnqueue FROM queued_turns ORDER BY enqueuedAt DESC LIMIT 1")
+        cursor2.moveToFirst()
+        assertEquals(5, cursor2.getInt(0))
+        cursor2.close()
     }
 }

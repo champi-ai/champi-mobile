@@ -17,6 +17,7 @@ android {
 dependencies {
     implementation(project(":core"))
     implementation(project(":context"))
+    implementation(project(":assistant"))
     implementation(project(":overlay"))
     implementation(project(":providers:remote"))
 
