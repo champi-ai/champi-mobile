@@ -2,6 +2,7 @@ package ai.champi.overlay
 
 import ai.champi.assistant.ConversationManager
 import ai.champi.assistant.TurnOrchestrator
+import ai.champi.audio.AudioCapture
 import ai.champi.core.overlay.BubbleOffset
 import ai.champi.core.overlay.OverlayPreferencesRepository
 import ai.champi.core.overlay.QuickAction
@@ -11,9 +12,12 @@ import ai.champi.core.persistence.MessageRole
 import ai.champi.core.state.AppStateHolder
 import ai.champi.core.state.CharacterState
 import ai.champi.core.state.ConversationEntry
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.SystemClock
 import android.view.Gravity
+import androidx.core.content.ContextCompat
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
@@ -49,7 +53,9 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -74,6 +80,7 @@ internal fun OverlayRoot(
     preferences: OverlayPreferencesRepository,
     conversationManager: ConversationManager,
     turnOrchestrator: TurnOrchestrator,
+    audioCapture: AudioCapture,
     scope: CoroutineScope,
     onDismiss: () -> Unit,
     onWindowSpecChanged: (WindowSpec) -> Unit,
@@ -100,6 +107,25 @@ internal fun OverlayRoot(
     var peeked by remember { mutableStateOf(false) }
     var geometry by remember { mutableStateOf(QuickActionGeometry.RADIAL_ARC) }
     var peekMinutes by remember { mutableStateOf(5) }
+    var micMuted by remember { mutableStateOf(false) }
+    var listeningJob by remember { mutableStateOf<Job?>(null) }
+
+    fun stopListening() {
+        listeningJob?.cancel()
+        listeningJob = null
+        appStateHolder.setAudioLevel(0f)
+        if (appStateHolder.state.value.characterState == CharacterState.LISTENING) {
+            appStateHolder.setCharacterState(CharacterState.IDLE)
+        }
+    }
+
+    fun flashError() {
+        animationScope.launch {
+            appStateHolder.setCharacterState(CharacterState.ERROR)
+            delay(500)
+            appStateHolder.setCharacterState(CharacterState.IDLE)
+        }
+    }
 
     // configuration.screenHeightDp is the *raw* display height, but this window's y-coordinate
     // is relative to the status-bar-inset parent frame WindowManager gives it — clamping against
@@ -146,6 +172,12 @@ internal fun OverlayRoot(
     }
     LaunchedEffect(Unit) {
         preferences.peekMinutes.collectLatest { peekMinutes = it }
+    }
+    LaunchedEffect(Unit) {
+        preferences.micMuted.collectLatest { muted ->
+            micMuted = muted
+            if (muted) stopListening()
+        }
     }
 
     // Resets on any gesture (bubbleOffset/mode change) and on any non-IDLE character state, per
@@ -230,7 +262,23 @@ internal fun OverlayRoot(
                                 .setClassName(view.context.packageName, SETTINGS_ACTIVITY_CLASS)
                                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
                         )
-                        QuickAction.MUTE_MIC, QuickAction.PUSH_TO_TALK -> Unit // stubs until :audio lands
+                        QuickAction.MUTE_MIC -> animationScope.launch {
+                            preferences.setMicMuted(!micMuted)
+                        }
+                        QuickAction.PUSH_TO_TALK -> when {
+                            listeningJob != null -> stopListening()
+                            micMuted -> flashError()
+                            ContextCompat.checkSelfPermission(view.context, Manifest.permission.RECORD_AUDIO) !=
+                                PackageManager.PERMISSION_GRANTED -> flashError()
+                            else -> {
+                                appStateHolder.setCharacterState(CharacterState.LISTENING)
+                                listeningJob = scope.launch {
+                                    audioCapture.pcmFlow()
+                                        .catch { stopListening() }
+                                        .collect { frame -> appStateHolder.setAudioLevel(rmsLevel(frame.samples)) }
+                                }
+                            }
+                        }
                     }
                 },
                 modifier = Modifier.align(Alignment.Center),
@@ -356,4 +404,13 @@ private suspend fun PointerInputScope.detectBubbleGestures(
             onDrag(delta)
         }
     }
+}
+
+/** RMS amplitude of a 16-bit PCM frame, normalized to 0f..1f. */
+private fun rmsLevel(samples: ShortArray): Float {
+    if (samples.isEmpty()) return 0f
+    var sumSquares = 0.0
+    for (sample in samples) sumSquares += sample.toDouble() * sample.toDouble()
+    val rms = kotlin.math.sqrt(sumSquares / samples.size)
+    return (rms / Short.MAX_VALUE).toFloat().coerceIn(0f, 1f)
 }

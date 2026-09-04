@@ -11,6 +11,8 @@ android {
 dependencies {
     implementation(project(":core"))
     implementation(project(":assistant"))
+    implementation(project(":audio"))
+    implementation(project(":providers:api"))
 
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.ktx)
