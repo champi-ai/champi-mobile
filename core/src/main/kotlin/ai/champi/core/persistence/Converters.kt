@@ -8,4 +8,16 @@ class Converters {
 
     @TypeConverter
     fun toRole(value: String): MessageRole = MessageRole.valueOf(value)
+
+    @TypeConverter
+    fun fromRoutingStage(stage: RoutingStage): String = stage.name
+
+    @TypeConverter
+    fun toRoutingStage(value: String): RoutingStage = RoutingStage.valueOf(value)
+
+    @TypeConverter
+    fun fromRoutingReason(reason: RoutingReason): String = reason.name
+
+    @TypeConverter
+    fun toRoutingReason(value: String): RoutingReason = RoutingReason.valueOf(value)
 }

@@ -11,7 +11,14 @@ data class ConversationTurn(val role: ConversationRole, val text: String)
  * that's UI-facing display state (what the panel renders); this is the provider-facing prompt
  * shape the assistant layer builds from it.
  */
-data class Conversation(val turns: List<ConversationTurn>)
+data class Conversation(val turns: List<ConversationTurn>) {
+    /**
+     * Rough token count of all turns in this context, estimated at 4 characters per token.
+     * Used by the routing heuristic to decide whether a request fits within the edge model's
+     * declared [ProviderCapabilities.maxInputTokens] budget.
+     */
+    val totalTokens: Int get() = turns.sumOf { it.text.length } / 4
+}
 
 sealed class LlmEvent {
     data class Token(val text: String) : LlmEvent()
