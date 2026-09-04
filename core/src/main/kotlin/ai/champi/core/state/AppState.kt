@@ -1,9 +1,15 @@
 package ai.champi.core.state
 
+import ai.champi.core.conversation.AttachmentType
+
 data class ConversationEntry(
     val id: String,
     val text: String,
     val fromUser: Boolean,
+    /** Cache-local file path set when this entry was created from a share-sheet payload. */
+    val attachmentUri: String? = null,
+    /** Discriminates whether [attachmentUri] is an image or a generic file. */
+    val attachmentType: AttachmentType? = null,
 )
 
 data class AppState(

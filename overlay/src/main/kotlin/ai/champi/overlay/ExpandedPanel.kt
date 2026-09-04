@@ -2,8 +2,10 @@ package ai.champi.overlay
 
 import ai.champi.assistant.ConversationManager
 import ai.champi.assistant.TurnOrchestrator
+import ai.champi.core.conversation.AttachmentType
 import ai.champi.core.state.AppState
 import ai.champi.core.state.CharacterState
+import ai.champi.core.state.ConversationEntry
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -18,6 +20,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -33,13 +36,19 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import kotlinx.coroutines.launch
+import java.io.File
 
 private const val SWIPE_DOWN_DISMISS_THRESHOLD_DP = 48
 
@@ -157,7 +166,7 @@ fun ExpandedPanel(
                     }
                     LazyColumn(modifier = Modifier.weight(1f), state = listState) {
                         items(appState.conversation, key = { it.id }) { entry ->
-                            MessageBubble(text = entry.text, fromUser = entry.fromUser)
+                            MessageBubble(entry = entry)
                         }
                     }
                 }
@@ -173,7 +182,8 @@ fun ExpandedPanel(
 }
 
 @Composable
-private fun MessageBubble(text: String, fromUser: Boolean) {
+private fun MessageBubble(entry: ConversationEntry) {
+    val fromUser = entry.fromUser
     Row(
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
         horizontalArrangement = if (fromUser) Arrangement.End else Arrangement.Start,
@@ -183,7 +193,46 @@ private fun MessageBubble(text: String, fromUser: Boolean) {
             contentColor = if (fromUser) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.widthIn(max = 260.dp),
         ) {
-            Text(text, modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
+            Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                when (entry.attachmentType) {
+                    AttachmentType.IMAGE -> {
+                        val context = LocalContext.current
+                        val model = entry.attachmentUri?.let {
+                            ImageRequest.Builder(context).data(File(it)).build()
+                        }
+                        if (model != null) {
+                            AsyncImage(
+                                model = model,
+                                contentDescription = "Shared image",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .size(160.dp)
+                                    .clip(RoundedCornerShape(8.dp)),
+                            )
+                            Spacer(Modifier.height(4.dp))
+                        }
+                    }
+                    AttachmentType.FILE -> {
+                        val fileName = entry.attachmentUri?.let { File(it).name } ?: "file"
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            modifier = Modifier.padding(bottom = 4.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.AttachFile,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                            )
+                            Text(fileName, style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                    null -> Unit
+                }
+                if (entry.text.isNotEmpty()) {
+                    Text(entry.text)
+                }
+            }
         }
     }
 }

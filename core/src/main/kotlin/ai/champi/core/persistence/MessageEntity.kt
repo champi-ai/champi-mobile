@@ -27,4 +27,8 @@ data class MessageEntity(
     val timestamp: Long,
     /** Raw JSON blob — routing/provider info for this turn (e.g. which provider answered it). */
     val providerMetadata: String? = null,
+    /** Cache-local file path for share-sheet attachments. Null when the message has no attachment. */
+    val attachmentUri: String? = null,
+    /** Text encoding of an [ai.champi.core.conversation.AttachmentType] value, or null. */
+    val attachmentType: String? = null,
 )

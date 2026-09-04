@@ -223,7 +223,13 @@ internal fun OverlayRoot(
             if (persisted.isNotEmpty()) {
                 appStateHolder.setConversation(
                     persisted.map { message ->
-                        ConversationEntry(id = message.id, text = message.content, fromUser = message.role == MessageRole.USER)
+                        ConversationEntry(
+                            id = message.id,
+                            text = message.content,
+                            fromUser = message.role == MessageRole.USER,
+                            attachmentUri = message.attachmentUri,
+                            attachmentType = message.attachmentType,
+                        )
                     },
                 )
             }
