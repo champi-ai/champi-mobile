@@ -43,6 +43,12 @@ class AppStateHolder @Inject constructor() {
         _state.update { it.copy(conversation = it.conversation + entry) }
     }
 
+    /** Replaces the whole conversation list — used once to seed it from persisted history on
+     *  cold start, since this in-memory list starts empty on every process restart. */
+    fun setConversation(entries: List<ConversationEntry>) {
+        _state.update { it.copy(conversation = entries) }
+    }
+
     /** Replaces an existing entry's text in place — how streamed LLM tokens update the last
      *  assistant entry incrementally instead of appending a new one per token. */
     fun updateConversationEntry(id: String, text: String) {

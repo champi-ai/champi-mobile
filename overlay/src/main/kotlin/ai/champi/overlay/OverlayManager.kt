@@ -1,5 +1,7 @@
 package ai.champi.overlay
 
+import ai.champi.assistant.ConversationManager
+import ai.champi.assistant.TurnOrchestrator
 import ai.champi.core.overlay.OverlayPreferencesRepository
 import ai.champi.core.state.AppStateHolder
 import android.content.Context
@@ -28,6 +30,8 @@ class OverlayManager @Inject constructor(
     @ApplicationContext private val context: Context,
     private val appStateHolder: AppStateHolder,
     private val preferences: OverlayPreferencesRepository,
+    private val conversationManager: ConversationManager,
+    private val turnOrchestrator: TurnOrchestrator,
 ) {
     private val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
 
@@ -50,13 +54,21 @@ class OverlayManager @Inject constructor(
                 WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
                 WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.TRANSLUCENT,
-        ).apply { gravity = Gravity.TOP or Gravity.START }
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            // Only takes effect while the window is also focusable (EXPANDED mode clears
+            // FLAG_NOT_FOCUSABLE) — shrinks the window so the input row stays above the IME
+            // instead of being covered by it.
+            softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
+        }
 
         val view = ComposeView(context)
         view.setContent {
             OverlayRoot(
                 appStateHolder = appStateHolder,
                 preferences = preferences,
+                conversationManager = conversationManager,
+                turnOrchestrator = turnOrchestrator,
                 scope = overlayScope,
                 // Deferred via post(): onDismiss fires from inside the bubble's own touch-event
                 // dispatch (the drag-end callback), so removing that same view synchronously
