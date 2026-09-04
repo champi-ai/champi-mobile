@@ -14,6 +14,7 @@ android {
 
 dependencies {
     implementation(project(":providers:api"))
+    implementation(project(":core"))
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.androidx.core.ktx)

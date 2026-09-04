@@ -1,5 +1,6 @@
 package ai.champi.actions
 
+import ai.champi.core.actions.ActionSettingsRepository
 import ai.champi.providers.api.ToolCall
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -23,7 +24,8 @@ import org.junit.runner.RunWith
 class CalendarActionProviderTest {
 
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
-    private val provider = CalendarActionProvider(context)
+    private val settings = ActionSettingsRepository(context)
+    private val provider = CalendarActionProvider(context, settings)
     private val json = Json { ignoreUnknownKeys = true }
 
     private val hasCalendarPermission: Boolean
@@ -80,6 +82,19 @@ class CalendarActionProviderTest {
             ToolCall(id = "4", name = "create_event", argumentsJson = """{"title":"x","startEpochMs":0,"durationMinutes":0}"""),
         )
         assertTrue(result.isError)
+    }
+
+    @Test
+    fun disabledSettingReturnsAnErrorInsteadOfCreatingAnEvent() = runBlocking {
+        settings.setCalendarActionsEnabled(false)
+        try {
+            val result = provider.invoke(
+                ToolCall(id = "5", name = "create_event", argumentsJson = """{"title":"x","startEpochMs":0,"durationMinutes":30}"""),
+            )
+            assertTrue(result.isError)
+        } finally {
+            settings.setCalendarActionsEnabled(true)
+        }
     }
 
     @Test

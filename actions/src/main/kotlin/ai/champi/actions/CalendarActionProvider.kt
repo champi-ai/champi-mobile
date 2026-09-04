@@ -1,5 +1,6 @@
 package ai.champi.actions
 
+import ai.champi.core.actions.ActionSettingsRepository
 import ai.champi.providers.api.ActionProvider
 import ai.champi.providers.api.ToolCall
 import ai.champi.providers.api.ToolResult
@@ -13,6 +14,7 @@ import android.content.pm.PackageManager
 import android.provider.CalendarContract
 import androidx.core.content.ContextCompat
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.flow.first
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import javax.inject.Inject
@@ -51,6 +53,7 @@ private const val PARAMS_SCHEMA = """{"type":"object","properties":{"title":{"ty
 @Singleton
 class CalendarActionProvider @Inject constructor(
     @ApplicationContext private val context: Context,
+    private val settings: ActionSettingsRepository,
 ) : ActionProvider {
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -62,6 +65,9 @@ class CalendarActionProvider @Inject constructor(
     override suspend fun invoke(call: ToolCall): ToolResult {
         if (call.name != "create_event") {
             return error(call, "Unknown tool: ${call.name}")
+        }
+        if (!settings.calendarActionsEnabled.first()) {
+            return error(call, "Calendar actions are disabled in settings.")
         }
 
         val args = runCatching { json.decodeFromString<CreateEventArgs>(call.argumentsJson) }

@@ -1,5 +1,6 @@
 package ai.champi.actions
 
+import ai.champi.core.actions.ActionSettingsRepository
 import ai.champi.providers.api.ActionProvider
 import ai.champi.providers.api.ToolCall
 import ai.champi.providers.api.ToolResult
@@ -10,6 +11,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.flow.first
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.util.Calendar
@@ -37,6 +39,7 @@ private const val PARAMS_SCHEMA = """{"type":"object","properties":{"hours":{"ty
 @Singleton
 class AlarmTimerActionProvider @Inject constructor(
     @ApplicationContext private val context: Context,
+    private val settings: ActionSettingsRepository,
 ) : ActionProvider {
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -48,6 +51,10 @@ class AlarmTimerActionProvider @Inject constructor(
     )
 
     override suspend fun invoke(call: ToolCall): ToolResult {
+        if (!settings.alarmActionsEnabled.first()) {
+            return error(call, "Alarm and timer actions are disabled in settings.")
+        }
+
         val alarmManager = context.getSystemService(AlarmManager::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms()) {
             return error(call, "Exact alarms aren't allowed — grant \"Alarms & reminders\" in system settings.")
