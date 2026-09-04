@@ -1,2 +1,69 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android" />
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+        <!--
+            Transparent, no-history Activity that receives share-sheet intents and feeds them into
+            the active conversation. noHistory="true" ensures Android never includes it in the
+            back stack. excludeFromRecents="true" keeps the task switcher clean.
+            theme="@android:style/Theme.NoDisplay" makes it invisible — it finishes in onCreate
+            before any UI frame is drawn.
+        -->
+        <activity
+            android:name="ai.champi.context.ShareReceiver"
+            android:exported="true"
+            android:noHistory="true"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.NoDisplay">
+
+            <!-- Single item: plain text and links -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+
+            <!-- Single item: HTML -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/html" />
+            </intent-filter>
+
+            <!-- Single item: any image -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+            </intent-filter>
+
+            <!-- Single item: PDF -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/pdf" />
+            </intent-filter>
+
+            <!-- Single item: catch-all -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+
+            <!-- Multiple items: any image -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+            </intent-filter>
+
+            <!-- Multiple items: catch-all -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

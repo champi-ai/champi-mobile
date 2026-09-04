@@ -9,7 +9,7 @@ import org.junit.Test
 
 private const val TEST_DB = "migration-test"
 
-/** Acceptance criteria for issues #16, #32, and #34: schema migrations complete without data loss. */
+/** Acceptance criteria for issues #16, #32, #34, and #46: schema migrations complete without data loss. */
 class MigrationTest {
 
     @get:Rule
@@ -69,5 +69,39 @@ class MigrationTest {
         val cursor = db.query("SELECT * FROM routing_decisions")
         assertEquals(1, cursor.count)
         cursor.close()
+    }
+
+    @Test
+    fun migrate4To5AddsAttachmentColumnsToMessages() {
+        helper.createDatabase(TEST_DB, 4).apply {
+            execSQL(
+                "INSERT INTO conversations (id, createdAt, updatedAt, title) VALUES ('c1', 0, 0, NULL)",
+            )
+            execSQL(
+                "INSERT INTO messages (id, conversationId, role, content, timestamp) VALUES ('m1', 'c1', 'USER', 'hello', 100)",
+            )
+            close()
+        }
+
+        val db = helper.runMigrationsAndValidate(TEST_DB, 5, true, MIGRATION_4_5)
+
+        // Verify the new columns exist and existing data is intact with NULLs for attachment fields.
+        val cursor = db.query("SELECT attachmentUri, attachmentType FROM messages WHERE id = 'm1'")
+        assert(cursor.count == 1)
+        cursor.moveToFirst()
+        val uriIndex = cursor.getColumnIndex("attachmentUri")
+        val typeIndex = cursor.getColumnIndex("attachmentType")
+        assert(cursor.isNull(uriIndex))
+        assert(cursor.isNull(typeIndex))
+        cursor.close()
+
+        // Verify a message with attachment fields round-trips correctly.
+        db.execSQL(
+            "INSERT INTO messages (id, conversationId, role, content, timestamp, attachmentUri, attachmentType) VALUES ('m2', 'c1', 'USER', '[image]', 200, '/cache/img.jpg', 'IMAGE')",
+        )
+        val cur2 = db.query("SELECT attachmentType FROM messages WHERE id = 'm2'")
+        cur2.moveToFirst()
+        assert(cur2.getString(0) == "IMAGE")
+        cur2.close()
     }
 }

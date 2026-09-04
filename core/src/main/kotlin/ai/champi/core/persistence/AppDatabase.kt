@@ -8,7 +8,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [ConversationEntity::class, MessageEntity::class, QueuedTurnEntity::class, RoutingDecisionEntity::class],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -56,5 +56,12 @@ val MIGRATION_3_4 = object : Migration(3, 4) {
             )
             """.trimIndent(),
         )
+    }
+}
+
+val MIGRATION_4_5 = object : Migration(4, 5) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE messages ADD COLUMN attachmentUri TEXT")
+        db.execSQL("ALTER TABLE messages ADD COLUMN attachmentType TEXT")
     }
 }

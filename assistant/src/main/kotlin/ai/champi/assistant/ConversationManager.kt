@@ -1,5 +1,6 @@
 package ai.champi.assistant
 
+import ai.champi.core.conversation.AttachmentType
 import ai.champi.core.conversation.Message
 import ai.champi.core.persistence.ConversationEntity
 import ai.champi.core.persistence.MessageDao
@@ -36,7 +37,11 @@ class ConversationManager @Inject constructor(
         .filterNotNull()
         .flatMapLatest { id -> dao.observeMessages(id).map { entities -> entities.map { it.toMessage() } } }
 
-    suspend fun appendUserMessage(text: String) = appendMessage(MessageRole.USER, text)
+    suspend fun appendUserMessage(
+        text: String,
+        attachmentUri: String? = null,
+        attachmentType: AttachmentType? = null,
+    ) = appendMessage(MessageRole.USER, text, attachmentUri = attachmentUri, attachmentType = attachmentType)
 
     suspend fun appendAssistantMessage(text: String, providerMetadata: String? = null) =
         appendMessage(MessageRole.ASSISTANT, text, providerMetadata)
@@ -49,7 +54,13 @@ class ConversationManager @Inject constructor(
         activeConversationId.value = createNewConversation()
     }
 
-    private suspend fun appendMessage(role: MessageRole, content: String, providerMetadata: String? = null) {
+    private suspend fun appendMessage(
+        role: MessageRole,
+        content: String,
+        providerMetadata: String? = null,
+        attachmentUri: String? = null,
+        attachmentType: AttachmentType? = null,
+    ) {
         ensureInitialized()
         val conversationId = activeConversationId.value ?: error("conversation not initialized")
         dao.insertMessage(
@@ -60,6 +71,8 @@ class ConversationManager @Inject constructor(
                 content = content,
                 timestamp = System.currentTimeMillis(),
                 providerMetadata = providerMetadata,
+                attachmentUri = attachmentUri,
+                attachmentType = attachmentType?.name,
             ),
         )
     }
@@ -79,5 +92,13 @@ class ConversationManager @Inject constructor(
         return id
     }
 
-    private fun MessageEntity.toMessage() = Message(id, role, content, timestamp, providerMetadata)
+    private fun MessageEntity.toMessage() = Message(
+        id = id,
+        role = role,
+        content = content,
+        timestamp = timestamp,
+        providerMetadata = providerMetadata,
+        attachmentUri = attachmentUri,
+        attachmentType = attachmentType?.let { runCatching { AttachmentType.valueOf(it) }.getOrNull() },
+    )
 }

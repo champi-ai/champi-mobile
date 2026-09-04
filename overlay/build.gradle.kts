@@ -18,4 +18,5 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.ktx)
     implementation(libs.androidx.savedstate.ktx)
     implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.coil.compose)
 }
