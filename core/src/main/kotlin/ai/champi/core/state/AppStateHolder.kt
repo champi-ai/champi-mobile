@@ -42,4 +42,12 @@ class AppStateHolder @Inject constructor() {
     fun appendConversationEntry(entry: ConversationEntry) {
         _state.update { it.copy(conversation = it.conversation + entry) }
     }
+
+    /** Replaces an existing entry's text in place — how streamed LLM tokens update the last
+     *  assistant entry incrementally instead of appending a new one per token. */
+    fun updateConversationEntry(id: String, text: String) {
+        _state.update { state ->
+            state.copy(conversation = state.conversation.map { if (it.id == id) it.copy(text = text) else it })
+        }
+    }
 }

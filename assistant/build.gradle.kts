@@ -13,6 +13,7 @@ android {
 
 dependencies {
     implementation(project(":core"))
+    implementation(project(":providers:api"))
     implementation(libs.kotlinx.coroutines.android)
 
     testImplementation(libs.junit)
