@@ -3,6 +3,7 @@ package ai.champi.core.overlay
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -56,11 +57,19 @@ class OverlayPreferencesRepository @Inject constructor(
         dataStore.edit { it[KEY_PEEK_MINUTES] = minutes }
     }
 
+    /** Set from the mute-mic quick action; push-to-talk refuses to start capture while true. */
+    val micMuted: Flow<Boolean> = dataStore.data.map { prefs -> prefs[KEY_MIC_MUTED] ?: false }
+
+    suspend fun setMicMuted(muted: Boolean) {
+        dataStore.edit { it[KEY_MIC_MUTED] = muted }
+    }
+
     private companion object {
         val KEY_BUBBLE_X = intPreferencesKey("bubble_x")
         val KEY_BUBBLE_Y = intPreferencesKey("bubble_y")
         val KEY_QUICK_ACTION_GEOMETRY = stringPreferencesKey("quick_action_geometry")
         val KEY_PEEK_MINUTES = intPreferencesKey("peek_minutes")
+        val KEY_MIC_MUTED = booleanPreferencesKey("mic_muted")
         const val DEFAULT_BUBBLE_Y = 600
         const val DEFAULT_PEEK_MINUTES = 5
     }

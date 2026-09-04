@@ -58,11 +58,16 @@ private fun notificationsGranted(context: android.content.Context): Boolean =
             Manifest.permission.POST_NOTIFICATIONS,
         ) == PackageManager.PERMISSION_GRANTED
 
+private fun micGranted(context: android.content.Context): Boolean =
+    ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
+        PackageManager.PERMISSION_GRANTED
+
 @Composable
 private fun PermissionScreen(onAllGranted: () -> Unit) {
     val context = LocalContext.current
     var overlayGranted by remember { mutableStateOf(Settings.canDrawOverlays(context)) }
     var notifGranted by remember { mutableStateOf(notificationsGranted(context)) }
+    var micGranted by remember { mutableStateOf(micGranted(context)) }
 
     val overlayLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
@@ -72,6 +77,9 @@ private fun PermissionScreen(onAllGranted: () -> Unit) {
     val notificationLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted -> notifGranted = granted }
+    val micLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted -> micGranted = granted }
 
     // Notification permission only controls whether the foreground-service notification is
     // visible, not whether the service can run at all — so it's requested but not required.
@@ -100,6 +108,14 @@ private fun PermissionScreen(onAllGranted: () -> Unit) {
         if (!notifGranted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             Button(onClick = { notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS) }) {
                 Text("Allow notifications")
+            }
+        }
+
+        // Optional, like notifications: push-to-talk degrades to a brief error flash without it
+        // rather than blocking the rest of the app from starting.
+        if (!micGranted) {
+            Button(onClick = { micLauncher.launch(Manifest.permission.RECORD_AUDIO) }) {
+                Text("Allow microphone (for push-to-talk)")
             }
         }
 
