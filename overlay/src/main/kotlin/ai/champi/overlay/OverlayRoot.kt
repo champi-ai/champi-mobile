@@ -21,11 +21,18 @@ import androidx.core.content.ContextCompat
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.absoluteOffset
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
@@ -68,11 +75,21 @@ private const val PEEK_VISIBLE_DP = 28
 private const val QUICK_ACTIONS_WINDOW_DP = 280
 private const val EXPANDED_HEIGHT_FRACTION = 0.6f
 
+// Dismiss zone: width ≥ 96 dp (spec B3); 120 dp gives comfortable visual padding around the target.
+private const val DISMISS_ZONE_WIDTH_DP = 120
+private const val DISMISS_ZONE_HEIGHT_DP = 64
+
 /**
  * Everything the overlay bubble/panel/quick-actions renders, plus the state machine driving it.
  * The overlay window itself is sized to whatever's currently visible (see [OverlayManager]) —
  * there is no fullscreen touch-passthrough trick here, since the platform API for it
  * (`ViewTreeObserver.OnComputeInternalInsetsListener`) is `@hide` and not in the public SDK.
+ *
+ * Exception: while a drag gesture is in progress the window temporarily expands to full-screen
+ * so the bottom-center dismiss zone indicator can be rendered. `FLAG_NOT_TOUCH_MODAL` ensures
+ * that touches outside any interactive element still pass through to the underlying app; during
+ * the brief drag the user's single finger is already on the bubble, so nothing else needs to
+ * receive touches anyway.
  */
 @Composable
 internal fun OverlayRoot(
@@ -105,6 +122,16 @@ internal fun OverlayRoot(
     }
     var bubbleOffset by remember { mutableStateOf(IntOffset(0, 600)) }
     var peeked by remember { mutableStateOf(false) }
+    // True while a drag gesture is in progress; expands the overlay window to full-screen so
+    // the bottom-center dismiss zone indicator can be drawn below the bubble.
+    var isDragging by remember { mutableStateOf(false) }
+    // True when the bubble center is currently over the dismiss zone during a drag.
+    var isDismissZoneActive by remember { mutableStateOf(false) }
+    // Captured at touch-down to decide whether a tap should restore from peek or open the panel.
+    var peekedAtDown by remember { mutableStateOf(false) }
+    // Incremented on every gesture start so the peek idle timer restarts after any interaction,
+    // even a tap that doesn't move the bubble or change mode.
+    var gestureCount by remember { mutableStateOf(0) }
     var geometry by remember { mutableStateOf(QuickActionGeometry.RADIAL_ARC) }
     var peekMinutes by remember { mutableStateOf(5) }
     var micMuted by remember { mutableStateOf(false) }
@@ -180,9 +207,10 @@ internal fun OverlayRoot(
         }
     }
 
-    // Resets on any gesture (bubbleOffset/mode change) and on any non-IDLE character state, per
-    // the peek spec — an in-progress conversation shouldn't have the bubble tuck itself away.
-    LaunchedEffect(bubbleOffset, mode, appState.characterState) {
+    // Resets on any gesture (via gestureCount), on any non-IDLE character state, on mode change,
+    // and immediately when peekMinutes changes (including to 0 which disables peek entirely).
+    // Using gestureCount as a key ensures even a stationary tap resets the full idle window.
+    LaunchedEffect(bubbleOffset, mode, appState.characterState, gestureCount, peekMinutes) {
         peeked = false
         if (mode == OverlayMode.COLLAPSED &&
             appState.characterState == CharacterState.IDLE &&
@@ -193,7 +221,7 @@ internal fun OverlayRoot(
         }
     }
 
-    val windowSpec = remember(mode, bubbleOffset, peeked, isAtStartEdge, screenWidthPx, screenHeightPx) {
+    val windowSpec = remember(mode, bubbleOffset, peeked, isAtStartEdge, screenWidthPx, screenHeightPx, isDragging) {
         when (mode) {
             OverlayMode.EXPANDED -> WindowSpec(
                 widthPx = screenWidthPx,
@@ -223,12 +251,24 @@ internal fun OverlayRoot(
             }
 
             OverlayMode.COLLAPSED -> {
-                val x = when {
-                    !peeked -> bubbleOffset.x
-                    isAtStartEdge -> -(bubblePx - peekVisiblePx)
-                    else -> screenWidthPx - peekVisiblePx
+                if (isDragging) {
+                    // Full-screen during drag so the dismiss zone indicator can be rendered at
+                    // the bottom-center while the bubble tracks the finger anywhere on screen.
+                    WindowSpec(
+                        widthPx = screenWidthPx,
+                        heightPx = screenHeightPx,
+                        xPx = 0,
+                        yPx = 0,
+                        gravity = Gravity.TOP or Gravity.START,
+                    )
+                } else {
+                    val x = when {
+                        !peeked -> bubbleOffset.x
+                        isAtStartEdge -> -(bubblePx - peekVisiblePx)
+                        else -> screenWidthPx - peekVisiblePx
+                    }
+                    WindowSpec(bubblePx, bubblePx, x, bubbleOffset.y, Gravity.TOP or Gravity.START)
                 }
-                WindowSpec(bubblePx, bubblePx, x, bubbleOffset.y, Gravity.TOP or Gravity.START)
             }
         }
     }
@@ -288,67 +328,157 @@ internal fun OverlayRoot(
             }
         }
 
-        OverlayMode.COLLAPSED -> Box(
-            modifier = Modifier
-                .size(BUBBLE_SIZE_DP.dp)
-                // TalkBack synthesizes double-tap/two-finger-double-tap into semantics click
-                // actions rather than replaying raw touch events, so the custom gesture detector
-                // below (needed to disambiguate tap/drag/long-press on one pointer stream) is
-                // invisible to it without these — without this block, TalkBack could describe the
-                // bubble but never actually activate it.
-                .semantics {
-                    contentDescription = "Champi assistant"
-                    onClick(label = "Open conversation") {
-                        mode = OverlayMode.EXPANDED
-                        true
-                    }
-                    onLongClick(label = "Open quick actions") {
-                        mode = OverlayMode.QUICK_ACTIONS
-                        true
-                    }
+        OverlayMode.COLLAPSED -> {
+            // The outer Box always fills the window. When not dragging the window is bubble-sized
+            // (56 × 56 dp) so this is equivalent to the former Modifier.size(BUBBLE_SIZE_DP.dp)
+            // root. When dragging the window expands to full-screen and the dismiss zone indicator
+            // is rendered at the bottom-center within it.
+            //
+            // The bubble Box and its pointerInput block are structurally stable across the
+            // dragging/non-dragging switch (same call-site position), so Compose keeps the
+            // composition identity — the active gesture is never cancelled mid-drag. The bubble's
+            // absoluteOffset shifts from IntOffset.Zero (window positioned at bubbleOffset by
+            // WindowManager) to bubbleOffset (window at screen origin during drag) so the visual
+            // position stays constant across the window resize.
+            Box(modifier = Modifier.fillMaxSize()) {
+                if (isDragging) {
+                    DismissZoneIndicator(
+                        active = isDismissZoneActive,
+                        modifier = Modifier.align(Alignment.BottomCenter),
+                    )
                 }
-                .pointerInput(Unit) {
-                    detectBubbleGestures(
-                        onTouchStart = { peeked = false },
-                        onDrag = { delta ->
-                            bubbleOffset = IntOffset(
-                                (bubbleOffset.x + delta.x.roundToInt())
-                                    .coerceIn(0, (screenWidthPx - bubblePx).coerceAtLeast(0)),
-                                (bubbleOffset.y + delta.y.roundToInt())
-                                    .coerceIn(0, (screenHeightPx - bubblePx).coerceAtLeast(0)),
+
+                val bubbleRelativeOffset = if (isDragging) bubbleOffset else IntOffset.Zero
+                Box(
+                    modifier = Modifier
+                        .absoluteOffset { bubbleRelativeOffset }
+                        .size(BUBBLE_SIZE_DP.dp)
+                        // TalkBack synthesizes double-tap/two-finger-double-tap into semantics click
+                        // actions rather than replaying raw touch events, so the custom gesture detector
+                        // below (needed to disambiguate tap/drag/long-press on one pointer stream) is
+                        // invisible to it without these — without this block, TalkBack could describe the
+                        // bubble but never actually activate it.
+                        .semantics {
+                            contentDescription = "Champi assistant"
+                            onClick(label = "Open conversation") {
+                                mode = OverlayMode.EXPANDED
+                                true
+                            }
+                            onLongClick(label = "Open quick actions") {
+                                mode = OverlayMode.QUICK_ACTIONS
+                                true
+                            }
+                        }
+                        .pointerInput(Unit) {
+                            detectBubbleGestures(
+                                onTouchStart = {
+                                    // Capture peek state before clearing it so onTap can distinguish
+                                    // "restore from peek" from "open panel".
+                                    peekedAtDown = peeked
+                                    peeked = false
+                                    gestureCount++
+                                },
+                                onDragStart = {
+                                    isDragging = true
+                                },
+                                onDrag = { delta ->
+                                    val newOffset = IntOffset(
+                                        (bubbleOffset.x + delta.x.roundToInt())
+                                            .coerceIn(0, (screenWidthPx - bubblePx).coerceAtLeast(0)),
+                                        (bubbleOffset.y + delta.y.roundToInt())
+                                            .coerceIn(0, (screenHeightPx - bubblePx).coerceAtLeast(0)),
+                                    )
+                                    bubbleOffset = newOffset
+                                    val centerX = newOffset.x + bubblePx / 2
+                                    val centerY = newOffset.y + bubblePx / 2
+                                    isDismissZoneActive = centerY > screenHeightPx - bubblePx * 2 &&
+                                        centerX in (screenWidthPx / 2 - bubblePx)..(screenWidthPx / 2 + bubblePx)
+                                },
+                                onDragEnd = {
+                                    val centerX = bubbleOffset.x + bubblePx / 2
+                                    val centerY = bubbleOffset.y + bubblePx / 2
+                                    val inDismissZone = centerY > screenHeightPx - bubblePx * 2 &&
+                                        centerX in (screenWidthPx / 2 - bubblePx)..(screenWidthPx / 2 + bubblePx)
+                                    isDismissZoneActive = false
+                                    if (inDismissZone) {
+                                        // Animate the bubble off the bottom of the screen before
+                                        // removing the window — keeps isDragging=true so the full-screen
+                                        // window stays alive long enough for the animation to complete.
+                                        animationScope.launch {
+                                            Animatable(bubbleOffset.y.toFloat()).animateTo(
+                                                targetValue = (screenHeightPx + bubblePx).toFloat(),
+                                                animationSpec = tween(durationMillis = 250),
+                                            ) {
+                                                bubbleOffset = IntOffset(bubbleOffset.x, value.roundToInt())
+                                            }
+                                            isDragging = false
+                                            onDismiss()
+                                        }
+                                    } else {
+                                        isDragging = false
+                                        val snappedX = if (centerX < screenWidthPx / 2) 0 else screenWidthPx - bubblePx
+                                        val snappedY = bubbleOffset.y
+                                        scope.launch { preferences.saveBubbleOffset(BubbleOffset(snappedX, snappedY)) }
+                                        animationScope.launch {
+                                            Animatable(bubbleOffset.x.toFloat()).animateTo(
+                                                targetValue = snappedX.toFloat(),
+                                                animationSpec = spring(
+                                                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                                                    stiffness = Spring.StiffnessMedium,
+                                                ),
+                                            ) {
+                                                bubbleOffset = IntOffset(value.roundToInt(), snappedY)
+                                            }
+                                        }
+                                    }
+                                },
+                                onTap = {
+                                    // When the bubble was peeked at touch-down, the tap's purpose is
+                                    // to restore full visibility — don't also open the panel.
+                                    if (!peekedAtDown) {
+                                        mode = OverlayMode.EXPANDED
+                                    }
+                                    peekedAtDown = false
+                                },
+                                onLongPress = { mode = OverlayMode.QUICK_ACTIONS },
                             )
                         },
-                        onDragEnd = {
-                            val centerX = bubbleOffset.x + bubblePx / 2
-                            val centerY = bubbleOffset.y + bubblePx / 2
-                            val inDismissZone = centerY > screenHeightPx - bubblePx * 2 &&
-                                centerX in (screenWidthPx / 2 - bubblePx)..(screenWidthPx / 2 + bubblePx)
-                            if (inDismissZone) {
-                                onDismiss()
-                            } else {
-                                val snappedX = if (centerX < screenWidthPx / 2) 0 else screenWidthPx - bubblePx
-                                val snappedY = bubbleOffset.y
-                                scope.launch { preferences.saveBubbleOffset(BubbleOffset(snappedX, snappedY)) }
-                                animationScope.launch {
-                                    Animatable(bubbleOffset.x.toFloat()).animateTo(
-                                        targetValue = snappedX.toFloat(),
-                                        animationSpec = spring(
-                                            dampingRatio = Spring.DampingRatioMediumBouncy,
-                                            stiffness = Spring.StiffnessMedium,
-                                        ),
-                                    ) {
-                                        bubbleOffset = IntOffset(value.roundToInt(), snappedY)
-                                    }
-                                }
-                            }
-                        },
-                        onTap = { mode = OverlayMode.EXPANDED },
-                        onLongPress = { mode = OverlayMode.QUICK_ACTIONS },
-                    )
-                },
-        ) {
-            CharacterPlaceholder(state = appState.characterState, size = BUBBLE_SIZE_DP.dp)
+                ) {
+                    CharacterPlaceholder(state = appState.characterState, size = BUBBLE_SIZE_DP.dp)
+                }
+            }
         }
+    }
+}
+
+/**
+ * Bottom-center target rendered only while a drag gesture is active. [active] turns the
+ * background from a muted hint to a prominent highlight so the user knows releasing here will
+ * dismiss the bubble. Width ≥ 96 dp per spec B3.
+ */
+@Composable
+private fun DismissZoneIndicator(active: Boolean, modifier: Modifier = Modifier) {
+    val backgroundColor = if (active) {
+        MaterialTheme.colorScheme.error.copy(alpha = 0.80f)
+    } else {
+        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.60f)
+    }
+    val iconTint = if (active) {
+        MaterialTheme.colorScheme.onError
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    Box(
+        modifier = modifier
+            .size(width = DISMISS_ZONE_WIDTH_DP.dp, height = DISMISS_ZONE_HEIGHT_DP.dp)
+            .background(backgroundColor),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = Icons.Filled.Close,
+            contentDescription = "Dismiss bubble",
+            tint = iconTint,
+        )
     }
 }
 
@@ -360,6 +490,7 @@ internal fun OverlayRoot(
  */
 private suspend fun PointerInputScope.detectBubbleGestures(
     onTouchStart: () -> Unit,
+    onDragStart: () -> Unit,
     onDrag: (Offset) -> Unit,
     onDragEnd: () -> Unit,
     onTap: () -> Unit,
@@ -398,6 +529,7 @@ private suspend fun PointerInputScope.detectBubbleGestures(
         totalDrag += delta
         if (!dragging && totalDrag.getDistance() > slop) {
             dragging = true
+            onDragStart()
         }
         if (dragging) {
             change.consume()
