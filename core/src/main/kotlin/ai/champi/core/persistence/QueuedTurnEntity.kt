@@ -1,0 +1,16 @@
+package ai.champi.core.persistence
+
+import androidx.room.Entity
+import androidx.room.PrimaryKey
+
+/** A turn that could not be served because no provider was available; replayed when one becomes available. */
+@Entity(tableName = "queued_turns")
+data class QueuedTurnEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val conversationId: String,
+    val inputText: String,
+    val inputAudioPath: String? = null,
+    /** Epoch millis at which the turn was enqueued. */
+    val enqueuedAt: Long,
+    val retryCount: Int = 0,
+)

@@ -7,17 +7,35 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
-    entities = [ConversationEntity::class, MessageEntity::class],
-    version = 2,
+    entities = [ConversationEntity::class, MessageEntity::class, QueuedTurnEntity::class],
+    version = 3,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun messageDao(): MessageDao
+    abstract fun queuedTurnDao(): QueuedTurnDao
 }
 
 val MIGRATION_1_2 = object : Migration(1, 2) {
     override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL("ALTER TABLE conversations ADD COLUMN title TEXT")
+    }
+}
+
+val MIGRATION_2_3 = object : Migration(2, 3) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS queued_turns (
+                id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                conversationId TEXT NOT NULL,
+                inputText TEXT NOT NULL,
+                inputAudioPath TEXT,
+                enqueuedAt INTEGER NOT NULL,
+                retryCount INTEGER NOT NULL
+            )
+            """.trimIndent(),
+        )
     }
 }
