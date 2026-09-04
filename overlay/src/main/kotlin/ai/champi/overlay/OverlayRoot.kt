@@ -69,10 +69,10 @@ import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 private const val LONG_PRESS_TIMEOUT_MS = 400L
-private const val BUBBLE_SIZE_DP = 56
+internal const val BUBBLE_SIZE_DP = 56
 private const val PEEK_VISIBLE_DP = 28
 // Radial arc: 96 dp radius + 48 dp button diameter means ~240 dp min; use 280 dp to avoid edge clipping
-private const val QUICK_ACTIONS_WINDOW_DP = 280
+internal const val QUICK_ACTIONS_WINDOW_DP = 280
 private const val EXPANDED_HEIGHT_FRACTION = 0.6f
 
 // Dismiss zone: width ≥ 96 dp (spec B3); 120 dp gives comfortable visual padding around the target.
@@ -90,6 +90,16 @@ private const val DISMISS_ZONE_HEIGHT_DP = 64
  * that touches outside any interactive element still pass through to the underlying app; during
  * the brief drag the user's single finger is already on the bubble, so nothing else needs to
  * receive touches anyway.
+ *
+ * The bubble [Box] and its `pointerInput(Unit)` modifier occupy the **same structural position**
+ * in the Compose tree for both [OverlayMode.COLLAPSED] and [OverlayMode.QUICK_ACTIONS] — they
+ * are merged into a single `else` branch of the mode switch. This preserves the pointer-stream
+ * coroutine across the COLLAPSED→QUICK_ACTIONS transition so that a finger still held down after
+ * the long-press fires continues to be tracked: [AppState.attention] is updated as the finger
+ * moves between targets, and the release position is compared against the target geometry to fire
+ * the correct action (or cancel cleanly). Without this, the coroutine would be cancelled by
+ * Compose when the composition branch changed, leaving `clickable` on the new composables to
+ * handle a pointer stream they can never receive because it started in a different window layout.
  */
 @Composable
 internal fun OverlayRoot(
@@ -154,6 +164,34 @@ internal fun OverlayRoot(
         }
     }
 
+    fun executeQuickAction(action: QuickAction) {
+        when (action) {
+            QuickAction.SLEEP -> appStateHolder.setCharacterState(CharacterState.SLEEPING)
+            QuickAction.SETTINGS -> view.context.startActivity(
+                Intent()
+                    .setClassName(view.context.packageName, SETTINGS_ACTIVITY_CLASS)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+            QuickAction.MUTE_MIC -> animationScope.launch {
+                preferences.setMicMuted(!micMuted)
+            }
+            QuickAction.PUSH_TO_TALK -> when {
+                listeningJob != null -> stopListening()
+                micMuted -> flashError()
+                ContextCompat.checkSelfPermission(view.context, Manifest.permission.RECORD_AUDIO) !=
+                    PackageManager.PERMISSION_GRANTED -> flashError()
+                else -> {
+                    appStateHolder.setCharacterState(CharacterState.LISTENING)
+                    listeningJob = scope.launch {
+                        audioCapture.pcmFlow()
+                            .catch { stopListening() }
+                            .collect { frame -> appStateHolder.setAudioLevel(rmsLevel(frame.samples)) }
+                    }
+                }
+            }
+        }
+    }
+
     // configuration.screenHeightDp is the *raw* display height, but this window's y-coordinate
     // is relative to the status-bar-inset parent frame WindowManager gives it — clamping against
     // the raw height left room for the window to extend past the real bottom of that frame, into
@@ -204,6 +242,15 @@ internal fun OverlayRoot(
         preferences.micMuted.collectLatest { muted ->
             micMuted = muted
             if (muted) stopListening()
+        }
+    }
+
+    // Reset attention whenever the quick-actions surface is dismissed — covers both the pointer
+    // path (onQuickActionsRelease resets it inline) and the TalkBack path (onSelect fires from
+    // a clickable handler, which sets mode = COLLAPSED without going through the gesture loop).
+    LaunchedEffect(mode) {
+        if (mode != OverlayMode.QUICK_ACTIONS) {
+            appStateHolder.setAttention(0f)
         }
     }
 
@@ -288,59 +335,37 @@ internal fun OverlayRoot(
             modifier = Modifier.fillMaxWidth().height(with(density) { expandedHeightPx.toDp() }),
         )
 
-        OverlayMode.QUICK_ACTIONS -> Box(modifier = Modifier.size(QUICK_ACTIONS_WINDOW_DP.dp)) {
-            QuickActionsLayer(
-                visible = true,
-                geometry = geometry,
-                anchorEdgeIsStart = isAtStartEdge,
-                onSelect = { action ->
-                    mode = OverlayMode.COLLAPSED
-                    when (action) {
-                        QuickAction.SLEEP -> appStateHolder.setCharacterState(CharacterState.SLEEPING)
-                        QuickAction.SETTINGS -> view.context.startActivity(
-                            Intent()
-                                .setClassName(view.context.packageName, SETTINGS_ACTIVITY_CLASS)
-                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-                        )
-                        QuickAction.MUTE_MIC -> animationScope.launch {
-                            preferences.setMicMuted(!micMuted)
-                        }
-                        QuickAction.PUSH_TO_TALK -> when {
-                            listeningJob != null -> stopListening()
-                            micMuted -> flashError()
-                            ContextCompat.checkSelfPermission(view.context, Manifest.permission.RECORD_AUDIO) !=
-                                PackageManager.PERMISSION_GRANTED -> flashError()
-                            else -> {
-                                appStateHolder.setCharacterState(CharacterState.LISTENING)
-                                listeningJob = scope.launch {
-                                    audioCapture.pcmFlow()
-                                        .catch { stopListening() }
-                                        .collect { frame -> appStateHolder.setAudioLevel(rmsLevel(frame.samples)) }
-                                }
-                            }
-                        }
-                    }
-                },
-                modifier = Modifier.align(Alignment.Center),
-            )
-            Box(modifier = Modifier.align(if (isAtStartEdge) Alignment.TopStart else Alignment.TopEnd)) {
-                CharacterPlaceholder(state = appState.characterState, size = BUBBLE_SIZE_DP.dp)
-            }
-        }
-
-        OverlayMode.COLLAPSED -> {
-            // The outer Box always fills the window. When not dragging the window is bubble-sized
-            // (56 × 56 dp) so this is equivalent to the former Modifier.size(BUBBLE_SIZE_DP.dp)
-            // root. When dragging the window expands to full-screen and the dismiss zone indicator
-            // is rendered at the bottom-center within it.
-            //
-            // The bubble Box and its pointerInput block are structurally stable across the
-            // dragging/non-dragging switch (same call-site position), so Compose keeps the
-            // composition identity — the active gesture is never cancelled mid-drag. The bubble's
-            // absoluteOffset shifts from IntOffset.Zero (window positioned at bubbleOffset by
-            // WindowManager) to bubbleOffset (window at screen origin during drag) so the visual
-            // position stays constant across the window resize.
+        // COLLAPSED and QUICK_ACTIONS share a single composition subtree so the bubble Box and
+        // its pointerInput(Unit) block stay at the same structural position — Compose preserves
+        // the node identity (and therefore the running gesture coroutine) across the window resize
+        // that happens when the long-press fires and mode flips to QUICK_ACTIONS. This is the same
+        // technique used for the drag/dismiss full-screen expansion in the COLLAPSED branch, where
+        // isDragging changes the window spec but the bubble node is never recreated.
+        else -> {
+            // Outer Box fills the current window, whatever size it is for the current mode.
             Box(modifier = Modifier.fillMaxSize()) {
+                // Quick-actions layer — composed whenever the mode is QUICK_ACTIONS; centred in
+                // the 280 × 280 dp quick-actions window. The clickable handlers on each target
+                // work for TalkBack (which synthesises a new pointer stream) and for direct taps
+                // after the user lifts the long-press finger. For the hold-and-release gesture
+                // (finger still down when targets appear) the action is resolved via
+                // onQuickActionsRelease in the detectBubbleGestures loop instead, because the
+                // original pointer stream cannot be delivered to a composable that entered the
+                // tree after the stream started.
+                if (mode == OverlayMode.QUICK_ACTIONS) {
+                    QuickActionsLayer(
+                        visible = true,
+                        geometry = geometry,
+                        anchorEdgeIsStart = isAtStartEdge,
+                        onSelect = { action ->
+                            executeQuickAction(action)
+                            mode = OverlayMode.COLLAPSED
+                        },
+                        modifier = Modifier.align(Alignment.Center),
+                    )
+                }
+
+                // Dismiss zone indicator — only during a drag in COLLAPSED mode.
                 if (isDragging) {
                     DismissZoneIndicator(
                         active = isDismissZoneActive,
@@ -348,7 +373,15 @@ internal fun OverlayRoot(
                     )
                 }
 
-                val bubbleRelativeOffset = if (isDragging) bubbleOffset else IntOffset.Zero
+                // Bubble Box — stable across COLLAPSED ↔ QUICK_ACTIONS mode changes.
+                // absoluteOffset shifts to keep the bubble at the same screen position as the
+                // window resizes (bubble-sized ↔ quick-actions-sized ↔ full-screen for drag).
+                val bubbleRelativeOffset: IntOffset = when {
+                    mode == OverlayMode.QUICK_ACTIONS ->
+                        IntOffset(bubbleOffset.x - windowSpec.xPx, bubbleOffset.y - windowSpec.yPx)
+                    isDragging -> bubbleOffset
+                    else -> IntOffset.Zero
+                }
                 Box(
                     modifier = Modifier
                         .absoluteOffset { bubbleRelativeOffset }
@@ -370,6 +403,7 @@ internal fun OverlayRoot(
                             }
                         }
                         .pointerInput(Unit) {
+                            val arcRadiusPx = with(density) { 96.dp.toPx() }
                             detectBubbleGestures(
                                 onTouchStart = {
                                     // Capture peek state before clearing it so onTap can distinguish
@@ -441,6 +475,27 @@ internal fun OverlayRoot(
                                     peekedAtDown = false
                                 },
                                 onLongPress = { mode = OverlayMode.QUICK_ACTIONS },
+                                onQuickActionsMove = { posFromBubbleCenter ->
+                                    // Drive AppState.attention from how far the finger has moved
+                                    // from the bubble centre toward the arc perimeter (0 = at
+                                    // centre, 1 = at the arc radius or beyond).
+                                    val distance = posFromBubbleCenter.getDistance()
+                                    appStateHolder.setAttention((distance / arcRadiusPx).coerceIn(0f, 1f))
+                                },
+                                onQuickActionsRelease = { posFromBubbleCenter ->
+                                    // Reset attention first — covers cancel and select paths alike.
+                                    appStateHolder.setAttention(0f)
+                                    val hitAction = quickActionsHitTest(
+                                        geometry = geometry,
+                                        anchorEdgeIsStart = isAtStartEdge,
+                                        posFromBubbleCenter = posFromBubbleCenter,
+                                        density = density,
+                                        quickActionsWindowDp = QUICK_ACTIONS_WINDOW_DP,
+                                        bubbleSizeDp = BUBBLE_SIZE_DP,
+                                    )
+                                    if (hitAction != null) executeQuickAction(hitAction)
+                                    mode = OverlayMode.COLLAPSED
+                                },
                             )
                         },
                 ) {
@@ -487,6 +542,11 @@ private fun DismissZoneIndicator(active: Boolean, modifier: Modifier = Modifier)
  * `detectTapGestures`/`detectDragGestures` can't be combined on one target since both would
  * race for the same down event, so this races a long-press timer against incoming pointer
  * events by hand.
+ *
+ * After the long-press fires, pointer movement and the eventual release are delivered via
+ * [onQuickActionsMove] and [onQuickActionsRelease] respectively. Both receive the finger
+ * position relative to the bubble centre in pixels, so the caller can drive [AppState.attention]
+ * and resolve which quick-action target (if any) was released on.
  */
 private suspend fun PointerInputScope.detectBubbleGestures(
     onTouchStart: () -> Unit,
@@ -495,6 +555,8 @@ private suspend fun PointerInputScope.detectBubbleGestures(
     onDragEnd: () -> Unit,
     onTap: () -> Unit,
     onLongPress: () -> Unit,
+    onQuickActionsMove: (posFromBubbleCenter: Offset) -> Unit = {},
+    onQuickActionsRelease: (posFromBubbleCenter: Offset) -> Unit = {},
 ) = awaitEachGesture {
     val down = awaitFirstDown(requireUnconsumed = false)
     onTouchStart()
@@ -503,6 +565,7 @@ private suspend fun PointerInputScope.detectBubbleGestures(
     var longPressFired = false
     var totalDrag = Offset.Zero
     val slop = viewConfiguration.touchSlop
+    val bubbleCenter = Offset(size.width / 2f, size.height / 2f)
 
     while (true) {
         // AwaitPointerEventScope is @RestrictsSuspension, so a long-press timer can't run as a
@@ -522,18 +585,26 @@ private suspend fun PointerInputScope.detectBubbleGestures(
         }
         val change = event.changes.firstOrNull { it.id == down.id } ?: break
         if (!change.pressed) {
-            if (dragging) onDragEnd() else if (!longPressFired) onTap()
+            when {
+                dragging -> onDragEnd()
+                longPressFired -> onQuickActionsRelease(change.position - bubbleCenter)
+                else -> onTap()
+            }
             break
         }
         val delta = change.positionChange()
         totalDrag += delta
-        if (!dragging && totalDrag.getDistance() > slop) {
+        // Do not start a drag after the long-press has fired — finger movement post-long-press
+        // drives quick-action attention, not a bubble drag.
+        if (!dragging && !longPressFired && totalDrag.getDistance() > slop) {
             dragging = true
             onDragStart()
         }
         if (dragging) {
             change.consume()
             onDrag(delta)
+        } else if (longPressFired) {
+            onQuickActionsMove(change.position - bubbleCenter)
         }
     }
 }
