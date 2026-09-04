@@ -10,6 +10,7 @@ import ai.champi.providers.api.ConversationRole
 import ai.champi.providers.api.ConversationTurn
 import ai.champi.providers.api.LlmEvent
 import ai.champi.providers.api.LlmProvider
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -68,23 +69,39 @@ class TurnOrchestrator @Inject constructor(
         var accumulated = ""
         var entryAppended = false
 
-        llmProvider.complete(buildConversationContext(), tools = emptyList()).collect { event ->
-            when (event) {
-                is LlmEvent.Token -> {
-                    accumulated += event.text
-                    if (!entryAppended) {
-                        appStateHolder.appendConversationEntry(ConversationEntry(id = entryId, text = accumulated, fromUser = false))
-                        entryAppended = true
-                    } else {
-                        appStateHolder.updateConversationEntry(entryId, accumulated)
+        try {
+            llmProvider.complete(buildConversationContext(), tools = emptyList()).collect { event ->
+                when (event) {
+                    is LlmEvent.Token -> {
+                        accumulated += event.text
+                        if (!entryAppended) {
+                            appStateHolder.appendConversationEntry(ConversationEntry(id = entryId, text = accumulated, fromUser = false))
+                            entryAppended = true
+                        } else {
+                            appStateHolder.updateConversationEntry(entryId, accumulated)
+                        }
+                    }
+                    is LlmEvent.ToolCallEvent -> Unit // dispatched to ActionProvider in #40
+                    is LlmEvent.Done -> {
+                        if (accumulated.isNotEmpty()) conversationManager.appendAssistantMessage(accumulated)
+                        appStateHolder.setCharacterState(CharacterState.IDLE)
                     }
                 }
-                is LlmEvent.ToolCallEvent -> Unit // dispatched to ActionProvider in #40
-                is LlmEvent.Done -> {
-                    if (accumulated.isNotEmpty()) conversationManager.appendAssistantMessage(accumulated)
-                    appStateHolder.setCharacterState(CharacterState.IDLE)
-                }
             }
+        } catch (e: CancellationException) {
+            throw e // a newer submitText() cancelling this turn — not a provider failure
+        } catch (e: Exception) {
+            // A network/parse failure mid-stream (e.g. the remote endpoint dropped the
+            // connection) must still resolve back to IDLE, same as the unavailable-provider path.
+            val message = if (entryAppended) {
+                "Champi lost connection while responding."
+            } else {
+                "Champi couldn't reach its language model."
+            }
+            appStateHolder.setCharacterState(CharacterState.ERROR)
+            appStateHolder.appendConversationEntry(ConversationEntry(id = UUID.randomUUID().toString(), text = message, fromUser = false))
+            delay(ERROR_FLASH_MS)
+            appStateHolder.setCharacterState(CharacterState.IDLE)
         }
     }
 

@@ -1,17 +1,19 @@
 package ai.champi.overlay
 
+import ai.champi.assistant.ConversationManager
+import ai.champi.assistant.TurnOrchestrator
 import ai.champi.core.overlay.BubbleOffset
 import ai.champi.core.overlay.OverlayPreferencesRepository
 import ai.champi.core.overlay.QuickAction
 import ai.champi.core.overlay.QuickActionGeometry
 import ai.champi.core.overlay.SETTINGS_ACTIVITY_CLASS
+import ai.champi.core.persistence.MessageRole
 import ai.champi.core.state.AppStateHolder
 import ai.champi.core.state.CharacterState
+import ai.champi.core.state.ConversationEntry
 import android.content.Intent
-import android.graphics.Rect as AndroidRect
 import android.os.SystemClock
 import android.view.Gravity
-import android.view.ViewTreeObserver
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
@@ -21,7 +23,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
@@ -50,6 +51,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -70,6 +72,8 @@ private const val EXPANDED_HEIGHT_FRACTION = 0.6f
 internal fun OverlayRoot(
     appStateHolder: AppStateHolder,
     preferences: OverlayPreferencesRepository,
+    conversationManager: ConversationManager,
+    turnOrchestrator: TurnOrchestrator,
     scope: CoroutineScope,
     onDismiss: () -> Unit,
     onWindowSpecChanged: (WindowSpec) -> Unit,
@@ -95,7 +99,6 @@ internal fun OverlayRoot(
     var bubbleOffset by remember { mutableStateOf(IntOffset(0, 600)) }
     var peeked by remember { mutableStateOf(false) }
     var geometry by remember { mutableStateOf(QuickActionGeometry.RADIAL_ARC) }
-    var imeVisible by remember { mutableStateOf(false) }
     var peekMinutes by remember { mutableStateOf(5) }
 
     // configuration.screenHeightDp is the *raw* display height, but this window's y-coordinate
@@ -121,6 +124,20 @@ internal fun OverlayRoot(
     val expandedHeightPx = (screenHeightPx * EXPANDED_HEIGHT_FRACTION).roundToInt()
     val isAtStartEdge = bubbleOffset.x < (screenWidthPx - bubblePx) / 2
 
+    // Seeds the in-memory conversation list from Room once per process — appState.conversation
+    // otherwise starts empty on every restart even though the history is still persisted.
+    LaunchedEffect(Unit) {
+        if (appStateHolder.state.value.conversation.isEmpty()) {
+            val persisted = conversationManager.messages.first()
+            if (persisted.isNotEmpty()) {
+                appStateHolder.setConversation(
+                    persisted.map { message ->
+                        ConversationEntry(id = message.id, text = message.content, fromUser = message.role == MessageRole.USER)
+                    },
+                )
+            }
+        }
+    }
     LaunchedEffect(Unit) {
         preferences.bubbleOffset.collectLatest { bubbleOffset = IntOffset(it.x, it.y) }
     }
@@ -129,19 +146,6 @@ internal fun OverlayRoot(
     }
     LaunchedEffect(Unit) {
         preferences.peekMinutes.collectLatest { peekMinutes = it }
-    }
-
-    // Best-effort keyboard detection: this overlay window is FLAG_NOT_FOCUSABLE so it never
-    // receives WindowInsets for another app's IME. Comparing the visible display frame is the
-    // same heuristic long-standing floating-bubble apps use; accuracy varies by OEM.
-    DisposableEffect(view) {
-        val listener = ViewTreeObserver.OnGlobalLayoutListener {
-            val rect = AndroidRect()
-            view.getWindowVisibleDisplayFrame(rect)
-            imeVisible = (screenHeightPx - rect.bottom) > screenHeightPx * 0.15
-        }
-        view.viewTreeObserver.addOnGlobalLayoutListener(listener)
-        onDispose { view.viewTreeObserver.removeOnGlobalLayoutListener(listener) }
     }
 
     // Resets on any gesture (bubbleOffset/mode change) and on any non-IDLE character state, per
@@ -197,9 +201,7 @@ internal fun OverlayRoot(
         }
     }
 
-    SideEffect { if (!imeVisible) onWindowSpecChanged(windowSpec) }
-
-    if (imeVisible) return
+    SideEffect { onWindowSpecChanged(windowSpec) }
 
     when (mode) {
         // There's no "tap outside the panel" region to detect here: this window covers only the
@@ -208,6 +210,8 @@ internal fun OverlayRoot(
         // is reachable within our own bounds via a background tap or swipe-down instead.
         OverlayMode.EXPANDED -> ExpandedPanel(
             appState = appState,
+            conversationManager = conversationManager,
+            turnOrchestrator = turnOrchestrator,
             onCollapse = { mode = OverlayMode.COLLAPSED },
             modifier = Modifier.fillMaxWidth().height(with(density) { expandedHeightPx.toDp() }),
         )

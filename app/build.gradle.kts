@@ -17,6 +17,7 @@ android {
 dependencies {
     implementation(project(":core"))
     implementation(project(":overlay"))
+    implementation(project(":providers:remote"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
