@@ -31,6 +31,19 @@ class AppStateHolder @Inject constructor() {
         _openPanelRequestId.update { it + 1 }
     }
 
+    /**
+     * Nonce incremented when [AlarmTimerActionProvider] needs the user to grant
+     * `SCHEDULE_EXACT_ALARM` on Android 12+. [ChampiService] observes this and fires
+     * [android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM] with
+     * [android.content.Intent.FLAG_ACTIVITY_NEW_TASK].
+     */
+    private val _exactAlarmSettingsRedirectId = MutableStateFlow(0L)
+    val exactAlarmSettingsRedirectId: StateFlow<Long> = _exactAlarmSettingsRedirectId
+
+    fun requestExactAlarmSettingsRedirect() {
+        _exactAlarmSettingsRedirectId.update { it + 1 }
+    }
+
     fun setCharacterState(characterState: CharacterState) {
         _state.update { it.copy(characterState = characterState) }
     }

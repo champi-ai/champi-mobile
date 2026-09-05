@@ -2,6 +2,8 @@ package ai.champi.overlay
 
 import ai.champi.assistant.ConversationManager
 import ai.champi.assistant.TurnOrchestrator
+import ai.champi.core.actions.ActiveTimer
+import ai.champi.core.actions.ActiveTimerRegistry
 import ai.champi.core.conversation.AttachmentType
 import ai.champi.core.state.AppState
 import ai.champi.core.state.CharacterState
@@ -21,14 +23,17 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -39,6 +44,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -49,6 +55,8 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import kotlinx.coroutines.launch
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
 
 private const val SWIPE_DOWN_DISMISS_THRESHOLD_DP = 48
 
@@ -61,6 +69,7 @@ fun ExpandedPanel(
     appState: AppState,
     conversationManager: ConversationManager,
     turnOrchestrator: TurnOrchestrator,
+    activeTimerRegistry: ActiveTimerRegistry,
     onCollapse: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -171,11 +180,69 @@ fun ExpandedPanel(
                     }
                 }
 
+                val activeTimers by activeTimerRegistry.timers.collectAsState()
+                if (activeTimers.isNotEmpty()) {
+                    Spacer(Modifier.height(8.dp))
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        activeTimers.forEach { timer ->
+                            ActiveTimerCard(
+                                timer = timer,
+                                onUndo = { activeTimerRegistry.cancel(timer.id) },
+                            )
+                        }
+                    }
+                }
+
                 Spacer(Modifier.height(8.dp))
                 InputRow(
                     enabled = appState.characterState == CharacterState.IDLE,
                     onSend = { text -> coroutineScope.launch { turnOrchestrator.submitText(text) } },
                 )
+            }
+        }
+    }
+}
+
+/**
+ * Inline card for a pending alarm or timer; shown above the input row whenever the
+ * [ActiveTimerRegistry] has at least one entry. Tapping "Undo" calls [onUndo], which cancels the
+ * alarm via [android.app.AlarmManager] and removes the entry from the registry.
+ */
+@Composable
+private fun ActiveTimerCard(timer: ActiveTimer, onUndo: () -> Unit) {
+    val label = timer.label?.takeIf { it.isNotBlank() }
+    val locale = LocalConfiguration.current.locales.get(0)
+    val timeString = SimpleDateFormat("HH:mm", locale).format(Date(timer.triggersAt))
+    val description = if (timer.toolName == "set_timer") {
+        "Timer${if (label != null) ": $label" else ""} — fires at $timeString"
+    } else {
+        "Alarm${if (label != null) ": $label" else ""} — set for $timeString"
+    }
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        shape = RoundedCornerShape(8.dp),
+        tonalElevation = 2.dp,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.weight(1f),
+            )
+            TextButton(onClick = onUndo) {
+                Icon(
+                    imageVector = Icons.Filled.Close,
+                    contentDescription = null,
+                    modifier = Modifier.size(14.dp),
+                )
+                Spacer(Modifier.width(4.dp))
+                Text("Undo", style = MaterialTheme.typography.labelSmall)
             }
         }
     }

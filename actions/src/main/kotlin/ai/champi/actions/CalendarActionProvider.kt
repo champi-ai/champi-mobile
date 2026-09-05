@@ -46,9 +46,11 @@ private const val PARAMS_SCHEMA = """{"type":"object","properties":{"title":{"ty
  * user-reviewed, and needs no calendar permission. When WRITE_CALENDAR/READ_CALENDAR are already
  * granted it inserts directly via [CalendarContract.Events] instead.
  *
- * The confirmation dialog the spec (issue #40) wants in front of every direct insert isn't built
- * yet, so the direct-insert path currently fires unconfirmed whenever the permission happens to be
- * granted — same scope boundary as #41's missing per-action toggle (#38).
+ * The `create_event` [ToolSpec] sets `requiresConfirmation = true`. [TurnOrchestrator.dispatchToolCall]
+ * generically checks that flag and gates on [AppStateHolder.requestConfirmation] before calling
+ * [invoke] for any provider — so the destructive direct-insert path is already confirmed before
+ * this class is ever invoked. The per-action toggle is checked via [ActionSettingsRepository] at
+ * the top of [invoke].
  */
 @Singleton
 class CalendarActionProvider @Inject constructor(
