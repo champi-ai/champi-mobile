@@ -1,5 +1,7 @@
 package ai.champi.assistant
 
+import ai.champi.core.context.ContextSnapshot
+import ai.champi.core.context.ContextSnapshotSource
 import ai.champi.core.persistence.AppDatabase
 import ai.champi.core.persistence.QueuedTurnDao
 import ai.champi.core.persistence.QueuedTurnEntity
@@ -34,6 +36,11 @@ import org.junit.runner.RunWith
  * Network-triggered replay and 30 s polling cannot be verified here; those acceptance criteria
  * require a real device with airplane-mode control and are noted as unverifiable in the PR.
  */
+/** Test double: always returns an all-null snapshot so no context system message is prepended. */
+private object NoOpContextSnapshotSource : ContextSnapshotSource {
+    override suspend fun readSnapshot() = ContextSnapshot()
+}
+
 @RunWith(AndroidJUnit4::class)
 class QueueReplayWorkerTest {
 
