@@ -1,6 +1,9 @@
 package ai.champi.actions
 
 import ai.champi.core.actions.ActionSettingsRepository
+import ai.champi.core.actions.ActiveTimer
+import ai.champi.core.actions.ActiveTimerRegistry
+import ai.champi.core.state.AppStateHolder
 import ai.champi.providers.api.ActionProvider
 import ai.champi.providers.api.ToolCall
 import ai.champi.providers.api.ToolResult
@@ -35,11 +38,21 @@ private const val PARAMS_SCHEMA = """{"type":"object","properties":{"hours":{"ty
  * `set_alarm` schedules the next occurrence of a time-of-day; `set_timer` schedules a duration
  * from now — both share the same (hours, minutes, label?) argument shape and dispatch mechanism,
  * differing only in how [invoke] interprets hours/minutes for each tool name.
+ *
+ * On API 31+ (Android 12), exact alarms require the `SCHEDULE_EXACT_ALARM` permission. When that
+ * permission has not been granted, [invoke] returns a graceful error [ToolResult] and signals
+ * [AppStateHolder.requestExactAlarmSettingsRedirect] so [ChampiService] can launch the system
+ * permission screen on behalf of the provider (which has no direct UI access).
+ *
+ * Successfully scheduled alarms are registered with [ActiveTimerRegistry] so the overlay can
+ * render an inline undo card; tapping "Undo" calls [ActiveTimerRegistry.cancel].
  */
 @Singleton
 class AlarmTimerActionProvider @Inject constructor(
     @ApplicationContext private val context: Context,
     private val settings: ActionSettingsRepository,
+    private val appStateHolder: AppStateHolder,
+    private val registry: ActiveTimerRegistry,
 ) : ActionProvider {
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -57,7 +70,12 @@ class AlarmTimerActionProvider @Inject constructor(
 
         val alarmManager = context.getSystemService(AlarmManager::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms()) {
-            return error(call, "Exact alarms aren't allowed — grant \"Alarms & reminders\" in system settings.")
+            appStateHolder.requestExactAlarmSettingsRedirect()
+            return error(
+                call,
+                "Exact alarms aren't allowed — grant \"Alarms & reminders\" in system settings. " +
+                    "Opening the permission screen now.",
+            )
         }
 
         val args = runCatching { json.decodeFromString<AlarmTimerArgs>(call.argumentsJson) }
@@ -89,6 +107,8 @@ class AlarmTimerActionProvider @Inject constructor(
         // the manifest, so it cannot reach an unspecified third party; CodeQL's Kotlin Intent model
         // doesn't recognize either as making the intent explicit — confirmed false positive.
         alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggersAt, pendingIntent)
+
+        registry.add(ActiveTimer(id = alarmId, label = args.label, triggersAt = triggersAt, toolName = call.name))
 
         return ToolResult(
             callId = call.id,

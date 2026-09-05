@@ -1,6 +1,8 @@
 package ai.champi.actions
 
 import ai.champi.core.actions.ActionSettingsRepository
+import ai.champi.core.actions.ActiveTimerRegistry
+import ai.champi.core.state.AppStateHolder
 import ai.champi.providers.api.ToolCall
 import android.app.AlarmManager
 import android.os.Build
@@ -29,7 +31,9 @@ class AlarmTimerActionProviderTest {
 
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
     private val settings = ActionSettingsRepository(context)
-    private val provider = AlarmTimerActionProvider(context, settings)
+    private val appStateHolder = AppStateHolder()
+    private val registry = ActiveTimerRegistry(context)
+    private val provider = AlarmTimerActionProvider(context, settings, appStateHolder, registry)
     private val json = Json { ignoreUnknownKeys = true }
 
     private val exactAlarmsAllowed: Boolean
@@ -109,5 +113,35 @@ class AlarmTimerActionProviderTest {
         val names = provider.specs.map { it.name }
         assertTrue(names.contains("set_alarm"))
         assertTrue(names.contains("set_timer"))
+    }
+
+    @Test
+    fun exactAlarmPermissionDeniedTriggersSettingsRedirect() = runBlocking {
+        if (exactAlarmsAllowed) return@runBlocking // can't test permission-denied path when granted
+        val beforeId = appStateHolder.exactAlarmSettingsRedirectId.value
+        provider.invoke(
+            ToolCall(id = "6", name = "set_timer", argumentsJson = """{"hours":0,"minutes":5}"""),
+        )
+        assertTrue(
+            "settings redirect nonce should have been incremented",
+            appStateHolder.exactAlarmSettingsRedirectId.value > beforeId,
+        )
+    }
+
+    @Test
+    fun successfulTimerAppearsInRegistry() = runBlocking {
+        if (!exactAlarmsAllowed) return@runBlocking
+        val beforeCount = registry.timers.value.size
+        val result = provider.invoke(
+            ToolCall(id = "7", name = "set_timer", argumentsJson = """{"hours":0,"minutes":2,"label":"test"}"""),
+        )
+        assertFalse(result.isError)
+        assertEquals(beforeCount + 1, registry.timers.value.size)
+        val added = registry.timers.value.last()
+        assertEquals("test", added.label)
+        assertEquals("set_timer", added.toolName)
+        // Clean up — cancel the real alarm we just scheduled.
+        registry.cancel(added.id)
+        assertEquals(beforeCount, registry.timers.value.size)
     }
 }

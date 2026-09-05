@@ -9,12 +9,16 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.os.Build
 import android.os.IBinder
+import android.provider.Settings
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /** Foreground service that keeps the placeholder overlay bubble alive. */
@@ -36,6 +40,7 @@ class ChampiService : Service() {
         )
         overlayManager.show()
         queueReplayWorker.start(serviceScope)
+        observeExactAlarmSettingsRedirect()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -53,6 +58,25 @@ class ChampiService : Service() {
         serviceScope.cancel()
         overlayManager.hide()
         super.onDestroy()
+    }
+
+    /**
+     * Observes [AppStateHolder.exactAlarmSettingsRedirectId] and launches the system "Alarms &
+     * reminders" permission screen whenever [AlarmTimerActionProvider] signals that exact-alarm
+     * permission is missing. [drop(1)] skips the initial StateFlow value so only real increments
+     * (from actual permission-denied events) trigger the intent.
+     */
+    private fun observeExactAlarmSettingsRedirect() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
+        serviceScope.launch {
+            appStateHolder.exactAlarmSettingsRedirectId.drop(1).collect {
+                startActivity(
+                    Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    },
+                )
+            }
+        }
     }
 
     override fun onBind(intent: Intent?): IBinder? = null

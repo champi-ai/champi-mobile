@@ -3,6 +3,7 @@ package ai.champi.overlay
 import ai.champi.assistant.ConversationManager
 import ai.champi.assistant.TurnOrchestrator
 import ai.champi.audio.AudioCapture
+import ai.champi.core.actions.ActiveTimerRegistry
 import ai.champi.core.overlay.OverlayPreferencesRepository
 import ai.champi.core.state.AppStateHolder
 import android.content.Context
@@ -34,6 +35,7 @@ class OverlayManager @Inject constructor(
     private val conversationManager: ConversationManager,
     private val turnOrchestrator: TurnOrchestrator,
     private val audioCapture: AudioCapture,
+    private val activeTimerRegistry: ActiveTimerRegistry,
 ) {
     private val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
 
@@ -72,6 +74,7 @@ class OverlayManager @Inject constructor(
                 conversationManager = conversationManager,
                 turnOrchestrator = turnOrchestrator,
                 audioCapture = audioCapture,
+                activeTimerRegistry = activeTimerRegistry,
                 scope = overlayScope,
                 // Deferred via post(): onDismiss fires from inside the bubble's own touch-event
                 // dispatch (the drag-end callback), so removing that same view synchronously
