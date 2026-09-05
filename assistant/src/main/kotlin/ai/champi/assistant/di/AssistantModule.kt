@@ -4,6 +4,7 @@ import ai.champi.actions.AlarmTimerActionProvider
 import ai.champi.actions.CalendarActionProvider
 import ai.champi.assistant.RoutingPolicy
 import ai.champi.assistant.TurnOrchestrator
+import ai.champi.core.context.ContextSnapshotSource
 import ai.champi.core.persistence.QueuedTurnDao
 import ai.champi.core.persistence.RoutingDecisionDao
 import ai.champi.core.routing.RoutingSettingsRepository
@@ -67,6 +68,7 @@ object AssistantModule {
         queuedTurnDao: QueuedTurnDao,
         appStateHolder: AppStateHolder,
         actionProviders: @JvmSuppressWildcards List<ActionProvider>,
+        contextSnapshotSource: ContextSnapshotSource,
     ): TurnOrchestrator = TurnOrchestrator(
         conversationManager = conversationManager,
         routingPolicy = routingPolicy,
@@ -74,5 +76,6 @@ object AssistantModule {
         queuedTurnDao = queuedTurnDao,
         appStateHolder = appStateHolder,
         actionProviders = actionProviders,
+        contextSnapshotSource = contextSnapshotSource,
     )
 }

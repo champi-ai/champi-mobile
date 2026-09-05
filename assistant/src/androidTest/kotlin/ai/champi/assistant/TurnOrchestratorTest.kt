@@ -75,6 +75,7 @@ class TurnOrchestratorTest {
             queuedTurnDao,
             appStateHolder,
             actionProviders,
+            NoOpContextSnapshotSource,
         )
     }
 
