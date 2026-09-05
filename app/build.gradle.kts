@@ -19,11 +19,14 @@ dependencies {
     implementation(project(":context"))
     implementation(project(":assistant"))
     implementation(project(":overlay"))
+    implementation(project(":providers:api"))
     implementation(project(":providers:remote"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
 
+    testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
     androidTestImplementation(libs.hilt.android.testing)
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.ext.junit)
