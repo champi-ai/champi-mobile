@@ -2,6 +2,7 @@ package ai.champi.assistant
 
 import ai.champi.core.context.ContextSnapshot
 import ai.champi.core.context.ContextSnapshotSource
+import ai.champi.core.conversation.AttachmentType
 import ai.champi.core.persistence.AppDatabase
 import ai.champi.core.routing.RoutingSettingsRepository
 import ai.champi.core.state.AppStateHolder
@@ -22,6 +23,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -193,6 +195,90 @@ class TurnOrchestratorTest {
             oldest = q.getOldest()
         }
         assertEquals(2, count)
+    }
+
+    // -------------------------------------------------------------------------
+    // Multimodal attachment tests (issue #48 acceptance criteria)
+    // -------------------------------------------------------------------------
+
+    /**
+     * AC1: when [submitText] is called with an image attachment and the provider declares
+     * [ProviderCapabilities.supportsImageInput] = true, [LlmProvider.complete] is called and the
+     * [ConversationTurn] for the user message carries the attachment URI and type.
+     */
+    @Test
+    fun imageAttachment_withSupportingProvider_passesAttachmentInConversationTurn() = runBlocking {
+        val fakeLlm = FakeLlmProvider(tokens = listOf("ok"), supportsImageInput = true)
+        val orchestrator = buildOrchestrator(fakeLlm)
+
+        orchestrator.submitText("describe this", attachmentUri = "/cache/img.jpg", attachmentType = AttachmentType.IMAGE)
+
+        withTimeout(3000) { appStateHolder.state.first { it.characterState == CharacterState.IDLE } }
+
+        val ctx = fakeLlm.lastCtx
+        assertNotNull("complete() was not called", ctx)
+        val userTurn = ctx!!.turns.find { it.role == ai.champi.providers.api.ConversationRole.USER && it.attachmentType == "IMAGE" }
+        assertNotNull("No user ConversationTurn with attachmentType=IMAGE found", userTurn)
+        assertEquals("/cache/img.jpg", userTurn!!.attachmentUri)
+    }
+
+    /**
+     * AC2: when [submitText] is called with an image attachment but the provider declares
+     * [ProviderCapabilities.supportsImageInput] = false, [LlmProvider.complete] is NOT called and
+     * a graceful error message appears in the conversation.
+     */
+    @Test
+    fun imageAttachment_withNonSupportingProvider_returnsGracefulError_withoutCallingComplete() = runBlocking {
+        val fakeLlm = FakeLlmProvider(tokens = listOf("ok"), supportsImageInput = false)
+        val orchestrator = buildOrchestrator(fakeLlm)
+
+        orchestrator.submitText("describe this", attachmentUri = "/cache/img.jpg", attachmentType = AttachmentType.IMAGE)
+
+        withTimeout(3000) { appStateHolder.state.first { it.characterState == CharacterState.IDLE } }
+
+        // complete() must NOT have been called — lastCtx stays null.
+        assertNull("complete() was called despite supportsImageInput=false", fakeLlm.lastCtx)
+
+        // A graceful error message must appear in the conversation state.
+        val finalState = appStateHolder.state.first()
+        val errorEntry = finalState.conversation.lastOrNull { !it.fromUser }
+        assertNotNull("No assistant error entry found", errorEntry)
+        assertTrue("Error message does not mention images", errorEntry!!.text.contains("image", ignoreCase = true))
+    }
+
+    /**
+     * AC3: [submitText] with no attachment args behaves identically to pre-issue behavior —
+     * [LlmProvider.complete] is called normally and the turn completes.
+     */
+    @Test
+    fun noAttachment_behavesIdenticallyToPreviousBehavior() = runBlocking {
+        val fakeLlm = FakeLlmProvider(tokens = listOf("Hi"))
+        val orchestrator = buildOrchestrator(fakeLlm)
+
+        orchestrator.submitText("hello")
+
+        withTimeout(3000) { appStateHolder.state.first { it.characterState == CharacterState.IDLE } }
+
+        assertNotNull("complete() was not called", fakeLlm.lastCtx)
+        val finalState = appStateHolder.state.first()
+        assertEquals("Hi", finalState.conversation.last().text)
+    }
+
+    /**
+     * AC4: a FILE attachment does not trigger the image-input capability guard — [complete] is
+     * called normally even when the provider has [ProviderCapabilities.supportsImageInput] = false.
+     */
+    @Test
+    fun fileAttachment_withNonSupportingProvider_doesNotTriggerImageGuard() = runBlocking {
+        val fakeLlm = FakeLlmProvider(tokens = listOf("got it"), supportsImageInput = false)
+        val orchestrator = buildOrchestrator(fakeLlm)
+
+        orchestrator.submitText("read this", attachmentUri = "/cache/doc.pdf", attachmentType = AttachmentType.FILE)
+
+        withTimeout(3000) { appStateHolder.state.first { it.characterState == CharacterState.IDLE } }
+
+        // complete() MUST have been called — FILE attachments are not gated by supportsImageInput.
+        assertNotNull("complete() was not called for FILE attachment", fakeLlm.lastCtx)
     }
 
     // -------------------------------------------------------------------------
