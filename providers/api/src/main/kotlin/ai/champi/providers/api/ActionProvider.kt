@@ -9,6 +9,12 @@ data class ToolSpec(
     val description: String,
     /** JSON Schema for the call's arguments, as a string rather than a typed schema model. */
     val parametersJsonSchema: String,
+    /**
+     * When `true`, the orchestrator must present a confirmation dialog to the user before calling
+     * [ActionProvider.invoke]. Intended for actions that are difficult to undo (e.g. direct
+     * calendar inserts, SMS sends) per §2.6 of the spec.
+     */
+    val requiresConfirmation: Boolean = false,
 )
 
 /** One invocation of a [ToolSpec] the LLM emitted mid-response (see [LlmEvent.ToolCallEvent]). */

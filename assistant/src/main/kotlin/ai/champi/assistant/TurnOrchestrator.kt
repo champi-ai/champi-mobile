@@ -9,11 +9,16 @@ import ai.champi.core.persistence.QueuedTurnEntity
 import ai.champi.core.routing.RoutingSettingsRepository
 import ai.champi.core.state.AppStateHolder
 import ai.champi.core.state.CharacterState
+import ai.champi.core.state.ConfirmationRequest
 import ai.champi.core.state.ConversationEntry
+import ai.champi.providers.api.ActionProvider
 import ai.champi.providers.api.Conversation
 import ai.champi.providers.api.ConversationRole
 import ai.champi.providers.api.ConversationTurn
 import ai.champi.providers.api.LlmEvent
+import ai.champi.providers.api.ToolCall
+import ai.champi.providers.api.ToolResult
+import ai.champi.providers.api.ToolSpec
 import android.util.Log
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -24,6 +29,8 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
@@ -39,8 +46,12 @@ import javax.inject.Singleton
  * unavailability window (tracked by [errorShownInWindow]) so multiple queued items during the
  * same outage don't repeatedly show the error state.
  *
- * Tool calls are surfaced as [LlmEvent]s but not yet dispatched to an `ActionProvider` — that's
- * issue #40's tool-call flow.
+ * [LlmEvent.ToolCallEvent]s are dispatched sequentially to the matching [ActionProvider] from
+ * [actionProviders]. Each call may require user confirmation (if [ToolSpec.requiresConfirmation]
+ * is true) via [AppStateHolder.requestConfirmation] before proceeding. Tool calls to a provider
+ * whose action-settings toggle is disabled return a graceful error [ToolResult] instead of
+ * throwing. Multiple tool calls within one LLM turn are handled sequentially by the natural
+ * structure of the event [collect] loop.
  */
 @Singleton
 open class TurnOrchestrator @Inject constructor(
@@ -49,10 +60,11 @@ open class TurnOrchestrator @Inject constructor(
     private val routingSettingsRepository: RoutingSettingsRepository,
     private val queuedTurnDao: QueuedTurnDao,
     private val appStateHolder: AppStateHolder,
-    private val contextSnapshotSource: ContextSnapshotSource,
+    private val actionProviders: List<ActionProvider>,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var activeTurn: Job? = null
+    private val json = Json { ignoreUnknownKeys = true }
 
     /**
      * Set to `true` the first time a [NoProviderException] fires within an unavailability window;
@@ -60,6 +72,20 @@ open class TurnOrchestrator @Inject constructor(
      * character from entering ERROR repeatedly while multiple turns queue up during the same outage.
      */
     private val errorShownInWindow = AtomicBoolean(false)
+
+    /** Flat map of tool name → (provider, spec) built once from [actionProviders]. */
+    private val toolIndex: Map<String, Pair<ActionProvider, ToolSpec>> by lazy {
+        buildMap {
+            for (provider in actionProviders) {
+                for (spec in provider.specs) {
+                    put(spec.name, provider to spec)
+                }
+            }
+        }
+    }
+
+    /** Combined list of all [ToolSpec]s across all registered [ActionProvider]s. */
+    private val allToolSpecs: List<ToolSpec> by lazy { actionProviders.flatMap { it.specs } }
 
     /**
      * Cancels any in-flight turn and starts this one. Suspends only long enough to cancel the
@@ -117,7 +143,7 @@ open class TurnOrchestrator @Inject constructor(
         var entryAppended = false
 
         try {
-            llmProvider.complete(windowedCtx, tools = emptyList()).collect { event ->
+            llmProvider.complete(ctx, tools = allToolSpecs).collect { event ->
                 when (event) {
                     is LlmEvent.Token -> {
                         accumulated += event.text
@@ -128,7 +154,10 @@ open class TurnOrchestrator @Inject constructor(
                             appStateHolder.updateConversationEntry(entryId, accumulated)
                         }
                     }
-                    is LlmEvent.ToolCallEvent -> Unit // dispatched to ActionProvider in #40
+                    is LlmEvent.ToolCallEvent -> {
+                        val result = dispatchToolCall(event.call)
+                        Log.d(TAG, "ToolResult for ${event.call.name}: isError=${result.isError} json=${result.resultJson}")
+                    }
                     is LlmEvent.Done -> {
                         if (accumulated.isNotEmpty()) conversationManager.appendAssistantMessage(accumulated)
                         errorShownInWindow.set(false)
@@ -153,7 +182,45 @@ open class TurnOrchestrator @Inject constructor(
         }
     }
 
-    /** Builds an unwindowed [Conversation] for the routing heuristic. */
+    /**
+     * Handles a single [ToolCall] from the LLM event stream:
+     * 1. Looks up the provider and spec by tool name; returns an error [ToolResult] if not found.
+     * 2. If the provider's action-settings toggle is off (detected by invoking the provider which
+     *    checks internally), produces a graceful error without throwing.
+     * 3. If [ToolSpec.requiresConfirmation] is true, presents a confirmation dialog via
+     *    [AppStateHolder.requestConfirmation] and waits for the user's response; declines produce
+     *    a graceful [ToolResult] rather than silently dropping the call.
+     * 4. Calls [ActionProvider.invoke] and returns the result.
+     *
+     * This method is intentionally sequential and called from within the [collect] loop, so
+     * multiple tool calls in one LLM turn are never concurrent.
+     */
+    private suspend fun dispatchToolCall(call: ToolCall): ToolResult {
+        val (provider, spec) = toolIndex[call.name]
+            ?: return ToolResult(
+                callId = call.id,
+                resultJson = json.encodeToString(mapOf("error" to "Unknown tool: ${call.name}")),
+                isError = true,
+            )
+
+        if (spec.requiresConfirmation) {
+            val request = ConfirmationRequest(
+                toolName = call.name,
+                prompt = spec.description,
+            )
+            val approved = appStateHolder.requestConfirmation(request)
+            if (!approved) {
+                return ToolResult(
+                    callId = call.id,
+                    resultJson = json.encodeToString(mapOf("error" to "User declined the action.")),
+                    isError = true,
+                )
+            }
+        }
+
+        return provider.invoke(call)
+    }
+
     private suspend fun buildConversationContext(): Conversation {
         val turns = conversationManager.messages.first().map { it.toConversationTurn() }.toMutableList()
 

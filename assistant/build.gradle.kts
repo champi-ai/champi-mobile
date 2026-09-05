@@ -1,6 +1,7 @@
 plugins {
     id("champi.android.library")
     id("champi.android.hilt")
+    alias(libs.plugins.kotlin.serialization)
 }
 
 android {
@@ -14,7 +15,9 @@ android {
 dependencies {
     implementation(project(":core"))
     implementation(project(":providers:api"))
+    implementation(project(":actions"))
     implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.kotlinx.serialization.json)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.junit)

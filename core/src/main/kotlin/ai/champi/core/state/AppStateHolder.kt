@@ -1,8 +1,10 @@
 package ai.champi.core.state
 
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
+import java.util.concurrent.atomic.AtomicReference
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -11,6 +13,12 @@ import javax.inject.Singleton
 class AppStateHolder @Inject constructor() {
     private val _state = MutableStateFlow(AppState())
     val state: StateFlow<AppState> = _state
+
+    /**
+     * Holds the in-flight [CompletableDeferred] for the current confirmation request, if any.
+     * Only one confirmation can be pending at a time (tool calls are processed sequentially).
+     */
+    private val pendingConfirmationDeferred = AtomicReference<CompletableDeferred<Boolean>?>(null)
 
     // Nonce rather than a plain event: StateFlow always replays its current value to a fresh
     // collector, so a request issued a moment before the overlay composes (e.g. a Quick Settings
@@ -37,6 +45,33 @@ class AppStateHolder @Inject constructor() {
 
     fun setMood(mood: Float) {
         _state.update { it.copy(mood = mood.coerceIn(0f, 1f)) }
+    }
+
+    /**
+     * Publishes [request] to the UI (via [AppState.pendingConfirmation]) and suspends until the
+     * user responds via [respondToConfirmation]. Returns `true` if approved, `false` if declined.
+     *
+     * Tool calls are processed sequentially so at most one confirmation is pending at a time.
+     */
+    suspend fun requestConfirmation(request: ConfirmationRequest): Boolean {
+        val deferred = CompletableDeferred<Boolean>()
+        pendingConfirmationDeferred.set(deferred)
+        _state.update { it.copy(pendingConfirmation = request) }
+        return try {
+            deferred.await()
+        } finally {
+            pendingConfirmationDeferred.set(null)
+            _state.update { it.copy(pendingConfirmation = null) }
+        }
+    }
+
+    /**
+     * Delivers the user's response ([approved]) to the in-flight [requestConfirmation] call.
+     * Called by the overlay confirmation dialog's approve/decline buttons. A no-op if no
+     * confirmation is pending.
+     */
+    fun respondToConfirmation(approved: Boolean) {
+        pendingConfirmationDeferred.get()?.complete(approved)
     }
 
     fun appendConversationEntry(entry: ConversationEntry) {

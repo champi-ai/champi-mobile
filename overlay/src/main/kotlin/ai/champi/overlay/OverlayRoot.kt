@@ -328,6 +328,7 @@ internal fun OverlayRoot(
 
     SideEffect { onWindowSpecChanged(windowSpec) }
 
+    Box(modifier = Modifier.fillMaxSize()) {
     when (mode) {
         // There's no "tap outside the panel" region to detect here: this window covers only the
         // bottom EXPANDED_HEIGHT_FRACTION of the screen (see the class doc on why — no fullscreen
@@ -510,6 +511,13 @@ internal fun OverlayRoot(
             }
         }
     }
+
+    // Confirmation dialog overlay — rendered on top of whatever mode is active when a destructive
+    // tool action is pending user approval.
+    appState.pendingConfirmation?.let { request ->
+        ConfirmationDialog(request = request, appStateHolder = appStateHolder)
+    }
+    } // end Box
 }
 
 /**
