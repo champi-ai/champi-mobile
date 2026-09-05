@@ -2,6 +2,7 @@ package ai.champi.overlay
 
 import ai.champi.assistant.ConversationManager
 import ai.champi.assistant.TurnOrchestrator
+import ai.champi.assistant.VoiceTurnOrchestrator
 import ai.champi.audio.AudioCapture
 import ai.champi.core.actions.ActiveTimerRegistry
 import ai.champi.core.overlay.BubbleOffset
@@ -108,6 +109,7 @@ internal fun OverlayRoot(
     preferences: OverlayPreferencesRepository,
     conversationManager: ConversationManager,
     turnOrchestrator: TurnOrchestrator,
+    voiceTurnOrchestrator: VoiceTurnOrchestrator,
     audioCapture: AudioCapture,
     activeTimerRegistry: ActiveTimerRegistry,
     scope: CoroutineScope,
@@ -153,9 +155,9 @@ internal fun OverlayRoot(
         listeningJob?.cancel()
         listeningJob = null
         appStateHolder.setAudioLevel(0f)
-        if (appStateHolder.state.value.characterState == CharacterState.LISTENING) {
-            appStateHolder.setCharacterState(CharacterState.IDLE)
-        }
+        // Delegates character-state cleanup to VoiceTurnOrchestrator when a voice session is active.
+        // deactivate() is a no-op if the session has already advanced past LISTENING.
+        voiceTurnOrchestrator.deactivate()
     }
 
     fun flashError() {
@@ -183,12 +185,19 @@ internal fun OverlayRoot(
                 ContextCompat.checkSelfPermission(view.context, Manifest.permission.RECORD_AUDIO) !=
                     PackageManager.PERMISSION_GRANTED -> flashError()
                 else -> {
-                    appStateHolder.setCharacterState(CharacterState.LISTENING)
+                    // RMS animation — runs concurrently alongside the STT session in
+                    // VoiceTurnOrchestrator (AudioCapture and SpeechRecognizer share the mic;
+                    // see VoiceTurnOrchestrator KDoc for the mic re-acquisition tradeoff).
                     listeningJob = scope.launch {
                         audioCapture.pcmFlow()
                             .catch { stopListening() }
                             .collect { frame -> appStateHolder.setAudioLevel(rmsLevel(frame.samples)) }
                     }
+                    // Voice pipeline: STT → LLM → TTS → playback.
+                    // activate() suspends only to cancel any in-flight session; the new session
+                    // runs asynchronously and owns all character-state transitions from LISTENING
+                    // onward (THINKING is handled by TurnOrchestrator internally).
+                    scope.launch { voiceTurnOrchestrator.activate() }
                 }
             }
         }

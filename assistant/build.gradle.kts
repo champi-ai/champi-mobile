@@ -16,6 +16,7 @@ dependencies {
     implementation(project(":core"))
     implementation(project(":providers:api"))
     implementation(project(":actions"))
+    implementation(project(":audio"))
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)
 

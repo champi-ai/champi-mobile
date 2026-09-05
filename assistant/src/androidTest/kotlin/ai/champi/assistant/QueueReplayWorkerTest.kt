@@ -2,6 +2,7 @@ package ai.champi.assistant
 
 import ai.champi.core.context.ContextSnapshot
 import ai.champi.core.context.ContextSnapshotSource
+import ai.champi.core.conversation.AttachmentType
 import ai.champi.core.persistence.AppDatabase
 import ai.champi.core.persistence.QueuedTurnDao
 import ai.champi.core.persistence.QueuedTurnEntity
@@ -37,7 +38,7 @@ import org.junit.runner.RunWith
  * require a real device with airplane-mode control and are noted as unverifiable in the PR.
  */
 /** Test double: always returns an all-null snapshot so no context system message is prepended. */
-private object NoOpContextSnapshotSource : ContextSnapshotSource {
+private object NoOpContextSourceForReplay : ContextSnapshotSource {
     override suspend fun readSnapshot() = ContextSnapshot()
 }
 
@@ -80,7 +81,7 @@ class QueueReplayWorkerTest {
             routingDecisionDao = db.routingDecisionDao(),
             routingSettingsRepository = settings,
         )
-        return TurnOrchestrator(conversationManager, routingPolicy, settings, queuedTurnDao, appStateHolder, emptyList(), NoOpContextSnapshotSource)
+        return TurnOrchestrator(conversationManager, routingPolicy, settings, queuedTurnDao, appStateHolder, emptyList(), NoOpContextSourceForReplay)
     }
 
     /** Enqueues a turn with a given [inputText] and [messageCountAtEnqueue]. */
@@ -102,8 +103,8 @@ class QueueReplayWorkerTest {
         enqueue("second", enqueuedAt = 2_000L)
         enqueue("third", enqueuedAt = 3_000L)
 
-        val recordingOrchestrator = object : TurnOrchestrator(conversationManager, buildRoutingPolicy(), settings, queuedTurnDao, appStateHolder, emptyList(), NoOpContextSnapshotSource) {
-            override suspend fun submitText(input: String) {
+        val recordingOrchestrator = object : TurnOrchestrator(conversationManager, buildRoutingPolicy(), settings, queuedTurnDao, appStateHolder, emptyList(), NoOpContextSourceForReplay) {
+            override suspend fun submitText(input: String, attachmentUri: String?, attachmentType: AttachmentType?) {
                 replayedInputs.add(input)
             }
         }
@@ -123,8 +124,8 @@ class QueueReplayWorkerTest {
         // Add 11 messages to the conversation so the threshold (>10) is exceeded.
         repeat(11) { conversationManager.appendUserMessage("filler $it") }
 
-        val recordingOrchestrator = object : TurnOrchestrator(conversationManager, buildRoutingPolicy(), settings, queuedTurnDao, appStateHolder, emptyList(), NoOpContextSnapshotSource) {
-            override suspend fun submitText(input: String) {
+        val recordingOrchestrator = object : TurnOrchestrator(conversationManager, buildRoutingPolicy(), settings, queuedTurnDao, appStateHolder, emptyList(), NoOpContextSourceForReplay) {
+            override suspend fun submitText(input: String, attachmentUri: String?, attachmentType: AttachmentType?) {
                 replayedInputs.add(input)
             }
         }
@@ -144,8 +145,8 @@ class QueueReplayWorkerTest {
         enqueue("fresh question", messageCountAtEnqueue = 0)
         repeat(5) { conversationManager.appendUserMessage("filler $it") }
 
-        val recordingOrchestrator = object : TurnOrchestrator(conversationManager, buildRoutingPolicy(), settings, queuedTurnDao, appStateHolder, emptyList(), NoOpContextSnapshotSource) {
-            override suspend fun submitText(input: String) {
+        val recordingOrchestrator = object : TurnOrchestrator(conversationManager, buildRoutingPolicy(), settings, queuedTurnDao, appStateHolder, emptyList(), NoOpContextSourceForReplay) {
+            override suspend fun submitText(input: String, attachmentUri: String?, attachmentType: AttachmentType?) {
                 replayedInputs.add(input)
             }
         }
@@ -160,8 +161,8 @@ class QueueReplayWorkerTest {
     fun noAvailableProvider_doesNotDrainQueue() = runBlocking {
         enqueue("waiting")
 
-        val recordingOrchestrator = object : TurnOrchestrator(conversationManager, buildRoutingPolicy(available = false), settings, queuedTurnDao, appStateHolder, emptyList(), NoOpContextSnapshotSource) {
-            override suspend fun submitText(input: String) {
+        val recordingOrchestrator = object : TurnOrchestrator(conversationManager, buildRoutingPolicy(available = false), settings, queuedTurnDao, appStateHolder, emptyList(), NoOpContextSourceForReplay) {
+            override suspend fun submitText(input: String, attachmentUri: String?, attachmentType: AttachmentType?) {
                 replayedInputs.add(input)
             }
         }
