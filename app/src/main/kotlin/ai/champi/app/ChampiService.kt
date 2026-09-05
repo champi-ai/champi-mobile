@@ -1,6 +1,7 @@
 package ai.champi.app
 
 import ai.champi.assistant.QueueReplayWorker
+import ai.champi.core.state.AppStateHolder
 import ai.champi.overlay.OverlayManager
 import android.app.Notification
 import android.app.NotificationChannel
@@ -22,6 +23,7 @@ class ChampiService : Service() {
 
     @Inject lateinit var overlayManager: OverlayManager
     @Inject lateinit var queueReplayWorker: QueueReplayWorker
+    @Inject lateinit var appStateHolder: AppStateHolder
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -40,6 +42,9 @@ class ChampiService : Service() {
         // Re-shows the bubble if the user dragged it into the dismiss zone; show() is a no-op
         // otherwise since it already checks whether the overlay view exists.
         overlayManager.show()
+        if (intent?.action == ACTION_OPEN_PANEL) {
+            appStateHolder.requestOpenPanel()
+        }
         return START_STICKY
     }
 
@@ -64,8 +69,11 @@ class ChampiService : Service() {
             .build()
     }
 
-    private companion object {
-        const val CHANNEL_ID = "champi_overlay"
-        const val NOTIFICATION_ID = 1
+    companion object {
+        /** Intent action: tells [ChampiService.onStartCommand] to open the conversation panel. */
+        const val ACTION_OPEN_PANEL = "ai.champi.app.action.OPEN_PANEL"
+
+        private const val CHANNEL_ID = "champi_overlay"
+        private const val NOTIFICATION_ID = 1
     }
 }

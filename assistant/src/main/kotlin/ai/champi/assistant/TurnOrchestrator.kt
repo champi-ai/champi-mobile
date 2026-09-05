@@ -82,11 +82,12 @@ open class TurnOrchestrator @Inject constructor(
         appStateHolder.appendConversationEntry(ConversationEntry(id = UUID.randomUUID().toString(), text = input, fromUser = true))
         conversationManager.appendUserMessage(input)
 
-        val ctx = buildConversationContext()
+        // Unwindowed context for the routing heuristic — RoutingPolicy.fits() needs total tokens.
+        val routingCtx = buildConversationContext()
         val edgeOnly = routingSettingsRepository.edgeOnlyMode.first()
 
         val llmProvider = try {
-            routingPolicy.selectLlm(ctx, input, edgeOnly)
+            routingPolicy.selectLlm(routingCtx, input, edgeOnly)
         } catch (e: NoProviderException) {
             val conversationId = conversationManager.getActiveConversationId()
             val messageCount = conversationManager.getMessageCount()
@@ -108,12 +109,15 @@ open class TurnOrchestrator @Inject constructor(
 
         appStateHolder.setCharacterState(CharacterState.THINKING)
 
+        // Windowed context for the actual provider call, trimmed to the selected provider's budget.
+        val windowedCtx = buildWindowedContext(llmProvider.capabilities.maxInputTokens)
+
         val entryId = UUID.randomUUID().toString()
         var accumulated = ""
         var entryAppended = false
 
         try {
-            llmProvider.complete(ctx, tools = emptyList()).collect { event ->
+            llmProvider.complete(windowedCtx, tools = emptyList()).collect { event ->
                 when (event) {
                     is LlmEvent.Token -> {
                         accumulated += event.text
@@ -149,6 +153,7 @@ open class TurnOrchestrator @Inject constructor(
         }
     }
 
+    /** Builds an unwindowed [Conversation] for the routing heuristic. */
     private suspend fun buildConversationContext(): Conversation {
         val turns = conversationManager.messages.first().map { it.toConversationTurn() }.toMutableList()
 
@@ -162,6 +167,15 @@ open class TurnOrchestrator @Inject constructor(
         }
 
         return Conversation(turns)
+    }
+
+    /**
+     * Builds a context-windowed [Conversation] for the actual provider call, trimmed to fit
+     * within [maxInputTokens] via [ContextWindowBuilder].
+     */
+    private suspend fun buildWindowedContext(maxInputTokens: Int): Conversation {
+        val messages = conversationManager.messages.first()
+        return ContextWindowBuilder.build(messages, maxInputTokens)
     }
 
     private companion object {
