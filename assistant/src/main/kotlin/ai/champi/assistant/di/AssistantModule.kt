@@ -2,6 +2,7 @@ package ai.champi.assistant.di
 
 import ai.champi.actions.AlarmTimerActionProvider
 import ai.champi.actions.CalendarActionProvider
+import ai.champi.assistant.NotificationClock
 import ai.champi.assistant.RoutingPolicy
 import ai.champi.assistant.TurnOrchestrator
 import ai.champi.core.context.ContextSnapshotSource
@@ -54,6 +55,15 @@ object AssistantModule {
         alarmTimerActionProvider: AlarmTimerActionProvider,
         calendarActionProvider: CalendarActionProvider,
     ): @JvmSuppressWildcards List<ActionProvider> = listOf(alarmTimerActionProvider, calendarActionProvider)
+
+    /**
+     * Provides the real wall-clock implementation of [NotificationClock] for
+     * [ai.champi.assistant.ProactiveNotificationEngine]'s token-bucket rate limiter.
+     * Test suites substitute a fake clock via the explicit constructor.
+     */
+    @Provides
+    @Singleton
+    fun provideNotificationClock(): NotificationClock = NotificationClock { System.currentTimeMillis() }
 
     /**
      * Provides [TurnOrchestrator] explicitly so the [List<ActionProvider>] parameter (not a
