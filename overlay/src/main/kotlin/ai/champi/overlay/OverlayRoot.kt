@@ -3,6 +3,7 @@ package ai.champi.overlay
 import ai.champi.assistant.ConversationManager
 import ai.champi.assistant.TurnOrchestrator
 import ai.champi.audio.AudioCapture
+import ai.champi.core.actions.ActiveTimerRegistry
 import ai.champi.core.overlay.BubbleOffset
 import ai.champi.core.overlay.OverlayPreferencesRepository
 import ai.champi.core.overlay.QuickAction
@@ -108,6 +109,7 @@ internal fun OverlayRoot(
     conversationManager: ConversationManager,
     turnOrchestrator: TurnOrchestrator,
     audioCapture: AudioCapture,
+    activeTimerRegistry: ActiveTimerRegistry,
     scope: CoroutineScope,
     onDismiss: () -> Unit,
     onWindowSpecChanged: (WindowSpec) -> Unit,
@@ -338,6 +340,7 @@ internal fun OverlayRoot(
             appState = appState,
             conversationManager = conversationManager,
             turnOrchestrator = turnOrchestrator,
+            activeTimerRegistry = activeTimerRegistry,
             onCollapse = { mode = OverlayMode.COLLAPSED },
             modifier = Modifier.fillMaxWidth().height(with(density) { expandedHeightPx.toDp() }),
         )
