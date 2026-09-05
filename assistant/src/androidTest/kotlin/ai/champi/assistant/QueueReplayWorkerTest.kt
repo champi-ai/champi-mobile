@@ -73,7 +73,7 @@ class QueueReplayWorkerTest {
             routingDecisionDao = db.routingDecisionDao(),
             routingSettingsRepository = settings,
         )
-        return TurnOrchestrator(conversationManager, routingPolicy, settings, queuedTurnDao, appStateHolder)
+        return TurnOrchestrator(conversationManager, routingPolicy, settings, queuedTurnDao, appStateHolder, emptyList())
     }
 
     /** Enqueues a turn with a given [inputText] and [messageCountAtEnqueue]. */
@@ -95,7 +95,7 @@ class QueueReplayWorkerTest {
         enqueue("second", enqueuedAt = 2_000L)
         enqueue("third", enqueuedAt = 3_000L)
 
-        val recordingOrchestrator = object : TurnOrchestrator(conversationManager, buildRoutingPolicy(), settings, queuedTurnDao, appStateHolder) {
+        val recordingOrchestrator = object : TurnOrchestrator(conversationManager, buildRoutingPolicy(), settings, queuedTurnDao, appStateHolder, emptyList()) {
             override suspend fun submitText(input: String) {
                 replayedInputs.add(input)
             }
@@ -116,7 +116,7 @@ class QueueReplayWorkerTest {
         // Add 11 messages to the conversation so the threshold (>10) is exceeded.
         repeat(11) { conversationManager.appendUserMessage("filler $it") }
 
-        val recordingOrchestrator = object : TurnOrchestrator(conversationManager, buildRoutingPolicy(), settings, queuedTurnDao, appStateHolder) {
+        val recordingOrchestrator = object : TurnOrchestrator(conversationManager, buildRoutingPolicy(), settings, queuedTurnDao, appStateHolder, emptyList()) {
             override suspend fun submitText(input: String) {
                 replayedInputs.add(input)
             }
@@ -137,7 +137,7 @@ class QueueReplayWorkerTest {
         enqueue("fresh question", messageCountAtEnqueue = 0)
         repeat(5) { conversationManager.appendUserMessage("filler $it") }
 
-        val recordingOrchestrator = object : TurnOrchestrator(conversationManager, buildRoutingPolicy(), settings, queuedTurnDao, appStateHolder) {
+        val recordingOrchestrator = object : TurnOrchestrator(conversationManager, buildRoutingPolicy(), settings, queuedTurnDao, appStateHolder, emptyList()) {
             override suspend fun submitText(input: String) {
                 replayedInputs.add(input)
             }
@@ -153,7 +153,7 @@ class QueueReplayWorkerTest {
     fun noAvailableProvider_doesNotDrainQueue() = runBlocking {
         enqueue("waiting")
 
-        val recordingOrchestrator = object : TurnOrchestrator(conversationManager, buildRoutingPolicy(available = false), settings, queuedTurnDao, appStateHolder) {
+        val recordingOrchestrator = object : TurnOrchestrator(conversationManager, buildRoutingPolicy(available = false), settings, queuedTurnDao, appStateHolder, emptyList()) {
             override suspend fun submitText(input: String) {
                 replayedInputs.add(input)
             }

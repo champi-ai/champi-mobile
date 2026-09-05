@@ -59,7 +59,12 @@ class CalendarActionProvider @Inject constructor(
     private val json = Json { ignoreUnknownKeys = true }
 
     override val specs: List<ToolSpec> = listOf(
-        ToolSpec("create_event", "Creates a calendar event", PARAMS_SCHEMA),
+        ToolSpec(
+            name = "create_event",
+            description = "Creates a calendar event",
+            parametersJsonSchema = PARAMS_SCHEMA,
+            requiresConfirmation = true,
+        ),
     )
 
     override suspend fun invoke(call: ToolCall): ToolResult {

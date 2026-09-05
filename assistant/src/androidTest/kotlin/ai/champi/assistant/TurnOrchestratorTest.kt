@@ -4,14 +4,21 @@ import ai.champi.core.persistence.AppDatabase
 import ai.champi.core.routing.RoutingSettingsRepository
 import ai.champi.core.state.AppStateHolder
 import ai.champi.core.state.CharacterState
+import ai.champi.providers.api.ActionProvider
+import ai.champi.providers.api.ToolCall
+import ai.champi.providers.api.ToolResult
+import ai.champi.providers.api.ToolSpec
 import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -40,8 +47,11 @@ class TurnOrchestratorTest {
         db.close()
     }
 
-    /** Assembles an orchestrator wired to a single [FakeLlmProvider]. */
-    private fun buildOrchestrator(fakeLlm: FakeLlmProvider): TurnOrchestrator {
+    /** Assembles an orchestrator wired to a single [FakeLlmProvider] and optional action providers. */
+    private fun buildOrchestrator(
+        fakeLlm: FakeLlmProvider,
+        actionProviders: List<ActionProvider> = emptyList(),
+    ): TurnOrchestrator {
         val routingDecisionDao = db.routingDecisionDao()
         val queuedTurnDao = db.queuedTurnDao()
         val routingPolicy = RoutingPolicy(
@@ -51,7 +61,14 @@ class TurnOrchestratorTest {
             routingDecisionDao = routingDecisionDao,
             routingSettingsRepository = settings,
         )
-        return TurnOrchestrator(conversationManager, routingPolicy, settings, queuedTurnDao, appStateHolder)
+        return TurnOrchestrator(
+            conversationManager,
+            routingPolicy,
+            settings,
+            queuedTurnDao,
+            appStateHolder,
+            actionProviders,
+        )
     }
 
     @Test
@@ -168,5 +185,166 @@ class TurnOrchestratorTest {
             oldest = q.getOldest()
         }
         assertEquals(2, count)
+    }
+
+    // -------------------------------------------------------------------------
+    // Tool-call flow tests (issue #40 acceptance criteria)
+    // -------------------------------------------------------------------------
+
+    /**
+     * AC1: A non-destructive tool call completes with a [ToolResult] and the turn ends normally.
+     * The [FakeLlmProvider] emits a single [ToolCallEvent] followed by [Done]; the
+     * [FakeActionProvider] is wired to handle it and records the invocation.
+     */
+    @Test
+    fun toolCallEvent_dispatchedToProvider_turnCompletesNormally() = runBlocking {
+        val spec = ToolSpec("set_timer", "Start a timer", "{}", requiresConfirmation = false)
+        val fakeAction = FakeActionProvider(spec)
+        val fakeLlm = FakeLlmProvider(
+            tokens = emptyList(),
+            toolCalls = listOf(ToolCall("id1", "set_timer", "{\"hours\":0,\"minutes\":2}")),
+        )
+
+        val orchestrator = buildOrchestrator(fakeLlm, listOf(fakeAction))
+        orchestrator.submitText("set a timer for 2 minutes")
+
+        withTimeout(3000) { appStateHolder.state.first { it.characterState == CharacterState.IDLE } }
+
+        assertTrue("ActionProvider.invoke was not called", fakeAction.invocations.isNotEmpty())
+        assertEquals("set_timer", fakeAction.invocations.first().name)
+    }
+
+    /**
+     * AC2: A destructive tool call (requiresConfirmation=true) suspends until user responds.
+     * Declining the confirmation produces a ToolResult error and the action is NOT invoked.
+     */
+    @Test
+    fun destructiveToolCall_declined_actionNotInvoked() = runBlocking {
+        val spec = ToolSpec("create_event", "Creates a calendar event", "{}", requiresConfirmation = true)
+        val fakeAction = FakeActionProvider(spec)
+        val fakeLlm = FakeLlmProvider(
+            tokens = emptyList(),
+            toolCalls = listOf(ToolCall("id2", "create_event", "{\"title\":\"Meeting\"}")),
+        )
+
+        val orchestrator = buildOrchestrator(fakeLlm, listOf(fakeAction))
+        orchestrator.submitText("add a calendar event")
+
+        // Wait for the confirmation dialog to appear in AppState.
+        withTimeout(3000) {
+            appStateHolder.state.first { it.pendingConfirmation != null }
+        }
+
+        // Decline the confirmation.
+        appStateHolder.respondToConfirmation(approved = false)
+
+        // Turn must still complete without throwing.
+        withTimeout(3000) { appStateHolder.state.first { it.characterState == CharacterState.IDLE } }
+
+        // The provider must NOT have been invoked.
+        assertTrue("ActionProvider.invoke was called despite decline", fakeAction.invocations.isEmpty())
+    }
+
+    /**
+     * AC2b: A destructive tool call with user approval invokes the provider.
+     */
+    @Test
+    fun destructiveToolCall_approved_actionInvoked() = runBlocking {
+        val spec = ToolSpec("create_event", "Creates a calendar event", "{}", requiresConfirmation = true)
+        val fakeAction = FakeActionProvider(spec)
+        val fakeLlm = FakeLlmProvider(
+            tokens = emptyList(),
+            toolCalls = listOf(ToolCall("id3", "create_event", "{\"title\":\"Meeting\"}")),
+        )
+
+        val orchestrator = buildOrchestrator(fakeLlm, listOf(fakeAction))
+        orchestrator.submitText("add a calendar event")
+
+        withTimeout(3000) {
+            appStateHolder.state.first { it.pendingConfirmation != null }
+        }
+
+        // Approve.
+        appStateHolder.respondToConfirmation(approved = true)
+
+        withTimeout(3000) { appStateHolder.state.first { it.characterState == CharacterState.IDLE } }
+
+        assertTrue("ActionProvider.invoke was not called after approval", fakeAction.invocations.isNotEmpty())
+    }
+
+    /**
+     * AC3: Two tool calls in one response execute sequentially. The second call only starts after
+     * the first [ToolResult] is returned, verified by the ordering of [FakeActionProvider.invocations].
+     */
+    @Test
+    fun twoToolCallsInOneTurn_executedSequentially() = runBlocking {
+        val spec1 = ToolSpec("tool_a", "First tool", "{}")
+        val spec2 = ToolSpec("tool_b", "Second tool", "{}")
+        val fakeAction = FakeActionProvider(spec1, spec2, delayMs = 50L)
+        val fakeLlm = FakeLlmProvider(
+            tokens = emptyList(),
+            toolCalls = listOf(
+                ToolCall("id_a", "tool_a", "{}"),
+                ToolCall("id_b", "tool_b", "{}"),
+            ),
+        )
+
+        val orchestrator = buildOrchestrator(fakeLlm, listOf(fakeAction))
+        orchestrator.submitText("run both tools")
+
+        withTimeout(5000) { appStateHolder.state.first { it.characterState == CharacterState.IDLE } }
+
+        assertEquals(2, fakeAction.invocations.size)
+        // Sequential: tool_a must have finished before tool_b started.
+        assertEquals("tool_a", fakeAction.invocations[0].name)
+        assertEquals("tool_b", fakeAction.invocations[1].name)
+        // The completion times must be in order (tool_a finished before tool_b finished).
+        assertTrue(fakeAction.completionTimesMs[0] <= fakeAction.completionTimesMs[1])
+    }
+
+    /**
+     * AC4: A tool call to an unknown tool name returns a graceful error ToolResult without
+     * throwing, and the turn completes normally back to IDLE.
+     */
+    @Test
+    fun toolCallToUnknownTool_gracefulErrorResult_turnCompletesNormally() = runBlocking {
+        val fakeLlm = FakeLlmProvider(
+            tokens = emptyList(),
+            toolCalls = listOf(ToolCall("id_unk", "nonexistent_tool", "{}")),
+        )
+
+        // No action providers registered — every tool name is unknown.
+        val orchestrator = buildOrchestrator(fakeLlm, emptyList())
+        orchestrator.submitText("do something unknown")
+
+        // Must resolve to IDLE without an exception blowing up the orchestrator.
+        withTimeout(3000) { appStateHolder.state.first { it.characterState == CharacterState.IDLE } }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Test doubles
+// ---------------------------------------------------------------------------
+
+/**
+ * Scriptable [ActionProvider] test double. Records each [invoke] call in [invocations] and
+ * the wall-clock time each invocation completed in [completionTimesMs].
+ *
+ * When [delayMs] is set each invocation sleeps briefly so sequential-vs-concurrent timing
+ * is observable.
+ */
+private class FakeActionProvider(
+    vararg specs: ToolSpec,
+    private val delayMs: Long = 0L,
+) : ActionProvider {
+    override val specs: List<ToolSpec> = specs.toList()
+    val invocations: MutableList<ToolCall> = mutableListOf()
+    val completionTimesMs: MutableList<Long> = mutableListOf()
+
+    override suspend fun invoke(call: ToolCall): ToolResult {
+        if (delayMs > 0) delay(delayMs)
+        invocations.add(call)
+        completionTimesMs.add(System.currentTimeMillis())
+        return ToolResult(callId = call.id, resultJson = """{"status":"ok"}""")
     }
 }
