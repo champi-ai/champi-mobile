@@ -1,5 +1,7 @@
 package ai.champi.assistant
 
+import ai.champi.core.context.ContextSnapshot
+import ai.champi.core.context.ContextSnapshotSource
 import ai.champi.core.persistence.AppDatabase
 import ai.champi.core.persistence.QueuedTurnDao
 import ai.champi.core.persistence.QueuedTurnEntity
@@ -34,6 +36,11 @@ import org.junit.runner.RunWith
  * Network-triggered replay and 30 s polling cannot be verified here; those acceptance criteria
  * require a real device with airplane-mode control and are noted as unverifiable in the PR.
  */
+/** Test double: always returns an all-null snapshot so no context system message is prepended. */
+private object NoOpContextSnapshotSource : ContextSnapshotSource {
+    override suspend fun readSnapshot() = ContextSnapshot()
+}
+
 @RunWith(AndroidJUnit4::class)
 class QueueReplayWorkerTest {
 
@@ -73,7 +80,7 @@ class QueueReplayWorkerTest {
             routingDecisionDao = db.routingDecisionDao(),
             routingSettingsRepository = settings,
         )
-        return TurnOrchestrator(conversationManager, routingPolicy, settings, queuedTurnDao, appStateHolder)
+        return TurnOrchestrator(conversationManager, routingPolicy, settings, queuedTurnDao, appStateHolder, NoOpContextSnapshotSource)
     }
 
     /** Enqueues a turn with a given [inputText] and [messageCountAtEnqueue]. */
@@ -95,7 +102,7 @@ class QueueReplayWorkerTest {
         enqueue("second", enqueuedAt = 2_000L)
         enqueue("third", enqueuedAt = 3_000L)
 
-        val recordingOrchestrator = object : TurnOrchestrator(conversationManager, buildRoutingPolicy(), settings, queuedTurnDao, appStateHolder) {
+        val recordingOrchestrator = object : TurnOrchestrator(conversationManager, buildRoutingPolicy(), settings, queuedTurnDao, appStateHolder, NoOpContextSnapshotSource) {
             override suspend fun submitText(input: String) {
                 replayedInputs.add(input)
             }
@@ -116,7 +123,7 @@ class QueueReplayWorkerTest {
         // Add 11 messages to the conversation so the threshold (>10) is exceeded.
         repeat(11) { conversationManager.appendUserMessage("filler $it") }
 
-        val recordingOrchestrator = object : TurnOrchestrator(conversationManager, buildRoutingPolicy(), settings, queuedTurnDao, appStateHolder) {
+        val recordingOrchestrator = object : TurnOrchestrator(conversationManager, buildRoutingPolicy(), settings, queuedTurnDao, appStateHolder, NoOpContextSnapshotSource) {
             override suspend fun submitText(input: String) {
                 replayedInputs.add(input)
             }
@@ -137,7 +144,7 @@ class QueueReplayWorkerTest {
         enqueue("fresh question", messageCountAtEnqueue = 0)
         repeat(5) { conversationManager.appendUserMessage("filler $it") }
 
-        val recordingOrchestrator = object : TurnOrchestrator(conversationManager, buildRoutingPolicy(), settings, queuedTurnDao, appStateHolder) {
+        val recordingOrchestrator = object : TurnOrchestrator(conversationManager, buildRoutingPolicy(), settings, queuedTurnDao, appStateHolder, NoOpContextSnapshotSource) {
             override suspend fun submitText(input: String) {
                 replayedInputs.add(input)
             }
@@ -153,7 +160,7 @@ class QueueReplayWorkerTest {
     fun noAvailableProvider_doesNotDrainQueue() = runBlocking {
         enqueue("waiting")
 
-        val recordingOrchestrator = object : TurnOrchestrator(conversationManager, buildRoutingPolicy(available = false), settings, queuedTurnDao, appStateHolder) {
+        val recordingOrchestrator = object : TurnOrchestrator(conversationManager, buildRoutingPolicy(available = false), settings, queuedTurnDao, appStateHolder, NoOpContextSnapshotSource) {
             override suspend fun submitText(input: String) {
                 replayedInputs.add(input)
             }

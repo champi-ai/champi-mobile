@@ -1,5 +1,6 @@
 package ai.champi.app
 
+import ai.champi.core.context.ContextSettingsRepository
 import ai.champi.core.overlay.OverlayPreferencesRepository
 import ai.champi.core.overlay.QuickActionGeometry
 import ai.champi.core.persistence.ModelFileStore
@@ -8,9 +9,16 @@ import ai.champi.providers.api.Locality
 import ai.champi.providers.api.LlmProvider
 import ai.champi.providers.api.SttProvider
 import ai.champi.providers.api.TtsProvider
+import android.Manifest
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -42,6 +50,8 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import android.content.pm.PackageManager
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
@@ -59,6 +69,7 @@ class SettingsActivity : ComponentActivity() {
 
     @Inject lateinit var preferences: OverlayPreferencesRepository
     @Inject lateinit var routingSettings: RoutingSettingsRepository
+    @Inject lateinit var contextSettings: ContextSettingsRepository
     @Inject lateinit var llmProvider: LlmProvider
     @Inject lateinit var sttProvider: SttProvider
     @Inject lateinit var ttsProvider: TtsProvider
@@ -71,6 +82,7 @@ class SettingsActivity : ComponentActivity() {
                     SettingsScreen(
                         preferences = preferences,
                         routingSettings = routingSettings,
+                        contextSettings = contextSettings,
                         sttProviders = listOf(sttProvider),
                         llmProviders = listOf(llmProvider),
                         ttsProviders = listOf(ttsProvider),
@@ -85,6 +97,7 @@ class SettingsActivity : ComponentActivity() {
 private fun SettingsScreen(
     preferences: OverlayPreferencesRepository,
     routingSettings: RoutingSettingsRepository,
+    contextSettings: ContextSettingsRepository,
     sttProviders: List<SttProvider>,
     llmProviders: List<LlmProvider>,
     ttsProviders: List<TtsProvider>,
@@ -170,6 +183,10 @@ private fun SettingsScreen(
             providerRows = providerRows,
             routingSettings = routingSettings,
         )
+
+        HorizontalDivider(modifier = Modifier.padding(vertical = 24.dp))
+
+        ContextSection(contextSettings = contextSettings)
     }
 }
 
@@ -311,5 +328,137 @@ private suspend fun setEnabledFor(
         ProviderStage.STT -> if (locality == Locality.EDGE) routingSettings.setEdgeSttEnabled(enabled) else routingSettings.setRemoteSttEnabled(enabled)
         ProviderStage.LLM -> if (locality == Locality.EDGE) routingSettings.setEdgeLlmEnabled(enabled) else routingSettings.setRemoteLlmEnabled(enabled)
         ProviderStage.TTS -> if (locality == Locality.EDGE) routingSettings.setEdgeTtsEnabled(enabled) else routingSettings.setRemoteTtsEnabled(enabled)
+    }
+}
+
+/**
+ * Renders the optional context-signal toggle section. Each of the four signals maps to a
+ * DataStore-backed boolean in [ContextSettingsRepository].
+ *
+ * Location toggle: enabling it triggers a [Manifest.permission.ACCESS_COARSE_LOCATION] runtime
+ * permission request. If the user denies the request the toggle reverts to off.
+ *
+ * Foreground-app toggle: [android.app.AppOpsManager.OPSTR_GET_USAGE_STATS] is a special AppOps
+ * permission that cannot be requested via the standard runtime-permission dialog. When the user
+ * enables this toggle, a button opens [Settings.ACTION_USAGE_ACCESS_SETTINGS] so they can grant
+ * it manually; the toggle remains on regardless of grant state — [PeriodicContextProvider]
+ * checks the permission before every read and silently skips the signal if not granted.
+ */
+@Composable
+private fun ContextSection(contextSettings: ContextSettingsRepository) {
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+
+    val locationEnabled by contextSettings.locationContextEnabled.collectAsState(initial = false)
+    val batteryEnabled by contextSettings.batteryContextEnabled.collectAsState(initial = false)
+    val connectivityEnabled by contextSettings.connectivityContextEnabled.collectAsState(initial = false)
+    val foregroundAppEnabled by contextSettings.foregroundAppContextEnabled.collectAsState(initial = false)
+
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (!granted) {
+            scope.launch { contextSettings.setLocationContextEnabled(false) }
+        }
+    }
+
+    Text("Context signals", style = MaterialTheme.typography.headlineSmall)
+    Text(
+        "All signals are opt-in and off by default. Enabled signals are injected as ambient " +
+            "context into each conversation turn, not stored in conversation history.",
+        style = MaterialTheme.typography.bodySmall,
+        modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
+    )
+
+    ContextToggleRow(
+        label = "Location",
+        description = "Prepends coarse location to each turn. Requires location permission.",
+        checked = locationEnabled,
+        onCheckedChange = { enabled ->
+            if (enabled) {
+                val already = ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.ACCESS_COARSE_LOCATION,
+                ) == PackageManager.PERMISSION_GRANTED
+                if (already) {
+                    scope.launch { contextSettings.setLocationContextEnabled(true) }
+                } else {
+                    scope.launch { contextSettings.setLocationContextEnabled(true) }
+                    locationPermissionLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
+                }
+            } else {
+                scope.launch { contextSettings.setLocationContextEnabled(false) }
+            }
+        },
+        contentDesc = "Location context toggle",
+    )
+
+    ContextToggleRow(
+        label = "Battery",
+        description = "Prepends battery level and charging status to each turn.",
+        checked = batteryEnabled,
+        onCheckedChange = { scope.launch { contextSettings.setBatteryContextEnabled(it) } },
+        contentDesc = "Battery context toggle",
+    )
+
+    ContextToggleRow(
+        label = "Connectivity",
+        description = "Prepends active network type (WiFi, mobile, etc.) to each turn.",
+        checked = connectivityEnabled,
+        onCheckedChange = { scope.launch { contextSettings.setConnectivityContextEnabled(it) } },
+        contentDesc = "Connectivity context toggle",
+    )
+
+    ContextToggleRow(
+        label = "Foreground app",
+        description = "Prepends the most recently used app to each turn. Requires usage access " +
+            "(a special permission granted via system settings, not a standard dialog).",
+        checked = foregroundAppEnabled,
+        onCheckedChange = { enabled ->
+            scope.launch { contextSettings.setForegroundAppContextEnabled(enabled) }
+            if (enabled) {
+                // PACKAGE_USAGE_STATS is not a normal runtime permission — direct the user to the
+                // system Usage Access settings screen where they can grant it manually.
+                context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS).apply {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        data = Uri.fromParts("package", context.packageName, null)
+                    }
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                })
+            }
+        },
+        contentDesc = "Foreground app context toggle",
+    )
+}
+
+@Composable
+private fun ContextToggleRow(
+    label: String,
+    description: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    contentDesc: String,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(label, style = MaterialTheme.typography.titleMedium)
+            Text(
+                description,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(top = 2.dp),
+            )
+        }
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            modifier = Modifier
+                .padding(start = 16.dp)
+                .semantics { contentDescription = contentDesc },
+        )
     }
 }
