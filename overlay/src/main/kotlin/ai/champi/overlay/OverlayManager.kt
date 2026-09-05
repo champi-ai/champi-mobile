@@ -64,6 +64,7 @@ class OverlayManager @Inject constructor(
             // FLAG_NOT_FOCUSABLE) — shrinks the window so the input row stays above the IME
             // instead of being covered by it.
             softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
+            disableMoveAnimation()
         }
 
         val view = ComposeView(context)
@@ -110,5 +111,26 @@ class OverlayManager @Inject constructor(
         composeView = null
         lifecycleOwner = null
         scope = null
+    }
+}
+
+/**
+ * Sets the hidden `WindowManager.LayoutParams.PRIVATE_FLAG_NO_MOVE_ANIMATION` bit (0x40) via
+ * reflection. Without it, WindowManagerService plays its default resize/reveal animation on every
+ * [WindowManager.updateViewLayout] bounds change for a [WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY]
+ * window — confirmed on-device (SurfaceFlinger logs an `animation-leash of window_animation` on
+ * every collapsed↔quick-actions resize) to take roughly a full second to settle, during which the
+ * quick-actions targets are effectively invisible. A normal-length long-press-and-release never
+ * survives that long, so the surface reads as "never opens." This flag is the standard fix used by
+ * floating-bubble ("chat heads"-style) overlays for exactly this issue; it's a plain non-final
+ * `int` field carrying `@UnsupportedAppUsage` rather than an enforced hidden API, so reflection
+ * access is expected to keep working, but this is still best-effort — failure just falls back to
+ * the (slow but functional) default animated resize rather than crashing.
+ */
+private fun WindowManager.LayoutParams.disableMoveAnimation() {
+    runCatching {
+        val field = WindowManager.LayoutParams::class.java.getField("privateFlags")
+        val noMoveAnimation = WindowManager.LayoutParams::class.java.getField("PRIVATE_FLAG_NO_MOVE_ANIMATION").getInt(null)
+        field.setInt(this, field.getInt(this) or noMoveAnimation)
     }
 }
