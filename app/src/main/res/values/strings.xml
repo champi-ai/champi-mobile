@@ -1,3 +1,7 @@
 <resources>
     <string name="champi_tile_label">Champi</string>
+    <string name="notification_channel_proactive_urgent">Champi proactive (urgent)</string>
+    <string name="notification_channel_proactive_silent">Champi proactive (silent)</string>
+    <string name="notification_reply_hint">Reply to Champi…</string>
+    <string name="notification_action_reply">Reply</string>
 </resources>

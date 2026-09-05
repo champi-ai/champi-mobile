@@ -47,6 +47,14 @@
             </intent-filter>
         </receiver>
 
+        <receiver
+            android:name=".NotificationReplyReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="ai.champi.app.action.NOTIFICATION_REPLY" />
+            </intent-filter>
+        </receiver>
+
         <service
             android:name=".ChampiTileService"
             android:exported="true"

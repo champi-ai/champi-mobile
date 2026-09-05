@@ -9,5 +9,6 @@ class ChampiApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         clearShareCache(this)
+        ProactiveNotificationHelper.registerChannels(this)
     }
 }
