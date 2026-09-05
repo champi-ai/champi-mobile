@@ -2,6 +2,7 @@ package ai.champi.assistant
 
 import ai.champi.core.context.ContextSnapshotSource
 import ai.champi.core.context.toSystemMessage
+import ai.champi.core.conversation.AttachmentType
 import ai.champi.core.conversation.Message
 import ai.champi.core.persistence.MessageRole
 import ai.champi.core.persistence.QueuedTurnDao
@@ -93,10 +94,22 @@ open class TurnOrchestrator @Inject constructor(
      * previous turn cleanly (so it can never leave the character stuck in THINKING) — the new
      * turn itself runs asynchronously, since callers observe progress via [AppStateHolder.state]
      * rather than waiting for the full response.
+     *
+     * [attachmentUri] and [attachmentType] carry an optional share-sheet attachment (image or file)
+     * submitted alongside [input]. Both default to `null` so all existing no-attachment call sites
+     * compile and behave identically to pre-Phase-6 behavior. When an image attachment is present
+     * and the selected LLM provider does not support image input
+     * ([ProviderCapabilities.supportsImageInput] is `false`), a graceful error assistant message is
+     * returned instead of calling [LlmProvider.complete] — the attachment is still persisted to
+     * [MessageEntity] so the conversation record is accurate.
      */
-    open suspend fun submitText(input: String) {
+    open suspend fun submitText(
+        input: String,
+        attachmentUri: String? = null,
+        attachmentType: AttachmentType? = null,
+    ) {
         activeTurn?.cancelAndJoin()
-        activeTurn = scope.launch { runTurn(input) }
+        activeTurn = scope.launch { runTurn(input, attachmentUri, attachmentType) }
     }
 
     /** Resets the per-outage-window ERROR-flash guard. Called by [QueueReplayWorker] after a
@@ -105,9 +118,13 @@ open class TurnOrchestrator @Inject constructor(
         errorShownInWindow.set(false)
     }
 
-    private suspend fun runTurn(input: String) {
+    private suspend fun runTurn(
+        input: String,
+        attachmentUri: String? = null,
+        attachmentType: AttachmentType? = null,
+    ) {
         appStateHolder.appendConversationEntry(ConversationEntry(id = UUID.randomUUID().toString(), text = input, fromUser = true))
-        conversationManager.appendUserMessage(input)
+        conversationManager.appendUserMessage(input, attachmentUri, attachmentType)
 
         // Fetch the raw message history and this turn's ephemeral context-signal system message
         // (if any signal is enabled) once, so routing and windowing see the same input.
@@ -138,6 +155,17 @@ open class TurnOrchestrator @Inject constructor(
                 delay(ERROR_FLASH_MS)
                 appStateHolder.setCharacterState(CharacterState.IDLE)
             }
+            return
+        }
+
+        // If this turn carries an image attachment and the selected provider cannot process images,
+        // skip the LLM call entirely and return a graceful assistant message. The user message is
+        // already persisted (with the attachment URI) so the conversation record is accurate.
+        if (attachmentType == AttachmentType.IMAGE && !llmProvider.capabilities.supportsImageInput) {
+            val errorText = "I can't process images on this device."
+            appStateHolder.appendConversationEntry(ConversationEntry(id = UUID.randomUUID().toString(), text = errorText, fromUser = false))
+            conversationManager.appendAssistantMessage(errorText)
+            appStateHolder.setCharacterState(CharacterState.IDLE)
             return
         }
 
@@ -244,4 +272,6 @@ private fun Message.toConversationTurn() = ConversationTurn(
         MessageRole.SYSTEM -> ConversationRole.SYSTEM
     },
     text = content,
+    attachmentUri = attachmentUri,
+    attachmentType = attachmentType?.name,
 )

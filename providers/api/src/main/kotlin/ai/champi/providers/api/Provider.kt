@@ -15,6 +15,11 @@ data class ProviderCapabilities(
     val languages: List<String>,
     val maxInputTokens: Int,
     val supportsStreaming: Boolean,
+    /** Whether this provider can accept image content in [ConversationTurn.attachmentUri] and encode
+     *  it for the underlying model. Defaults to `false` — providers that do not implement image
+     *  encoding must leave this unset so [TurnOrchestrator] can return a graceful error instead of
+     *  passing an attachment the provider would silently drop or crash on. */
+    val supportsImageInput: Boolean = false,
 )
 
 /**

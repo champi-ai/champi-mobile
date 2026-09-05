@@ -18,21 +18,36 @@ import kotlinx.coroutines.flow.flow
  * Scriptable [LlmProvider] test double: yields [tokens] one at a time (each after [tokenDelayMs])
  * then any [toolCalls] (as [LlmEvent.ToolCallEvent]) then a [LlmEvent.Done].
  * Set [availableOverride] to false to exercise the unavailable path.
+ * Set [supportsImageInput] to true to declare image-input capability (tests the multimodal path).
+ *
+ * [lastCtx] is set on every [complete] call so tests can assert on the [Conversation] the
+ * orchestrator actually passed to the provider.
  */
 class FakeLlmProvider(
     private val tokens: List<String> = listOf("Hel", "lo", "!"),
     private val tokenDelayMs: Long = 20L,
     private val availableOverride: Boolean = true,
     private val toolCalls: List<ToolCall> = emptyList(),
+    supportsImageInput: Boolean = false,
 ) : LlmProvider {
     override val id = "fake-llm"
     override val locality = Locality.EDGE
     override val cost = Cost(LatencyClass.LOW, BatteryClass.LOW)
-    override val capabilities = ProviderCapabilities(languages = listOf("en"), maxInputTokens = 4096, supportsStreaming = true)
+    override val capabilities = ProviderCapabilities(
+        languages = listOf("en"),
+        maxInputTokens = 4096,
+        supportsStreaming = true,
+        supportsImageInput = supportsImageInput,
+    )
+
+    /** The most recent [Conversation] received by [complete]; null before the first call. */
+    var lastCtx: Conversation? = null
+        private set
 
     override suspend fun available(): Boolean = availableOverride
 
     override fun complete(ctx: Conversation, tools: List<ToolSpec>): Flow<LlmEvent> = flow {
+        lastCtx = ctx
         for (token in tokens) {
             delay(tokenDelayMs)
             emit(LlmEvent.Token(token))
