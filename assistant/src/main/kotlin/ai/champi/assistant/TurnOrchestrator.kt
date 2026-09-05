@@ -61,6 +61,7 @@ open class TurnOrchestrator @Inject constructor(
     private val queuedTurnDao: QueuedTurnDao,
     private val appStateHolder: AppStateHolder,
     private val actionProviders: List<ActionProvider>,
+    private val contextSnapshotSource: ContextSnapshotSource,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var activeTurn: Job? = null
@@ -108,8 +109,15 @@ open class TurnOrchestrator @Inject constructor(
         appStateHolder.appendConversationEntry(ConversationEntry(id = UUID.randomUUID().toString(), text = input, fromUser = true))
         conversationManager.appendUserMessage(input)
 
+        // Fetch the raw message history and this turn's ephemeral context-signal system message
+        // (if any signal is enabled) once, so routing and windowing see the same input.
+        val messages = conversationManager.messages.first()
+        val contextMessage = contextSnapshotSource.readSnapshot().toSystemMessage()
+        if (contextMessage != null) Log.d(TAG, "Context system message: ${contextMessage.content}")
+        val messagesWithContext = if (contextMessage != null) messages + contextMessage else messages
+
         // Unwindowed context for the routing heuristic — RoutingPolicy.fits() needs total tokens.
-        val routingCtx = buildConversationContext()
+        val routingCtx = Conversation(messagesWithContext.map { it.toConversationTurn() })
         val edgeOnly = routingSettingsRepository.edgeOnlyMode.first()
 
         val llmProvider = try {
@@ -135,15 +143,17 @@ open class TurnOrchestrator @Inject constructor(
 
         appStateHolder.setCharacterState(CharacterState.THINKING)
 
-        // Windowed context for the actual provider call, trimmed to the selected provider's budget.
-        val windowedCtx = buildWindowedContext(llmProvider.capabilities.maxInputTokens)
+        // Windowed context for the actual provider call, trimmed to the selected provider's
+        // budget. The context-signal message (if any) is a SYSTEM turn, so ContextWindowBuilder's
+        // always-include-system-messages rule keeps it in regardless of trimming.
+        val windowedCtx = ContextWindowBuilder.build(messagesWithContext, llmProvider.capabilities.maxInputTokens)
 
         val entryId = UUID.randomUUID().toString()
         var accumulated = ""
         var entryAppended = false
 
         try {
-            llmProvider.complete(ctx, tools = allToolSpecs).collect { event ->
+            llmProvider.complete(windowedCtx, tools = allToolSpecs).collect { event ->
                 when (event) {
                     is LlmEvent.Token -> {
                         accumulated += event.text
@@ -219,30 +229,6 @@ open class TurnOrchestrator @Inject constructor(
         }
 
         return provider.invoke(call)
-    }
-
-    private suspend fun buildConversationContext(): Conversation {
-        val turns = conversationManager.messages.first().map { it.toConversationTurn() }.toMutableList()
-
-        // Read a fresh context snapshot for this turn. If any signal is enabled and the
-        // corresponding permission is granted, a system message is prepended to the conversation.
-        // This is an ephemeral prepend — it is NOT persisted to ConversationEntity.
-        val contextMessage = contextSnapshotSource.readSnapshot().toSystemMessage()
-        if (contextMessage != null) {
-            Log.d(TAG, "Context system message: ${contextMessage.content}")
-            turns.add(0, contextMessage.toConversationTurn())
-        }
-
-        return Conversation(turns)
-    }
-
-    /**
-     * Builds a context-windowed [Conversation] for the actual provider call, trimmed to fit
-     * within [maxInputTokens] via [ContextWindowBuilder].
-     */
-    private suspend fun buildWindowedContext(maxInputTokens: Int): Conversation {
-        val messages = conversationManager.messages.first()
-        return ContextWindowBuilder.build(messages, maxInputTokens)
     }
 
     private companion object {
