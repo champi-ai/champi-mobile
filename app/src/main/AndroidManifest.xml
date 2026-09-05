@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
@@ -7,6 +8,21 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <!-- Optional context signals — all opt-in, off by default. -->
+    <!-- Standard runtime permission requested when the user enables location context. -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <!--
+        PACKAGE_USAGE_STATS is a special AppOps permission (not a normal runtime permission).
+        It must be declared here but is NOT granted via a permission dialog; the user must enable
+        it manually via Settings → Apps → Special app access → Usage access. The app directs
+        the user there when they enable the foreground-app context toggle.
+        tools:ignore="ProtectedPermissions" suppresses the lint warning that this permission is
+        only granted to system apps — it is actually grantable to user apps via usage access.
+    -->
+    <uses-permission
+        android:name="android.permission.PACKAGE_USAGE_STATS"
+        tools:ignore="ProtectedPermissions" />
 
     <application
         android:name=".ChampiApplication"

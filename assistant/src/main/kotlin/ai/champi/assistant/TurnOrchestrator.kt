@@ -1,5 +1,7 @@
 package ai.champi.assistant
 
+import ai.champi.core.context.ContextSnapshotSource
+import ai.champi.core.context.toSystemMessage
 import ai.champi.core.conversation.Message
 import ai.champi.core.persistence.MessageRole
 import ai.champi.core.persistence.QueuedTurnDao
@@ -12,6 +14,7 @@ import ai.champi.providers.api.Conversation
 import ai.champi.providers.api.ConversationRole
 import ai.champi.providers.api.ConversationTurn
 import ai.champi.providers.api.LlmEvent
+import android.util.Log
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -46,6 +49,7 @@ open class TurnOrchestrator @Inject constructor(
     private val routingSettingsRepository: RoutingSettingsRepository,
     private val queuedTurnDao: QueuedTurnDao,
     private val appStateHolder: AppStateHolder,
+    private val contextSnapshotSource: ContextSnapshotSource,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var activeTurn: Job? = null
@@ -146,12 +150,23 @@ open class TurnOrchestrator @Inject constructor(
     }
 
     private suspend fun buildConversationContext(): Conversation {
-        val turns = conversationManager.messages.first().map { it.toConversationTurn() }
+        val turns = conversationManager.messages.first().map { it.toConversationTurn() }.toMutableList()
+
+        // Read a fresh context snapshot for this turn. If any signal is enabled and the
+        // corresponding permission is granted, a system message is prepended to the conversation.
+        // This is an ephemeral prepend — it is NOT persisted to ConversationEntity.
+        val contextMessage = contextSnapshotSource.readSnapshot().toSystemMessage()
+        if (contextMessage != null) {
+            Log.d(TAG, "Context system message: ${contextMessage.content}")
+            turns.add(0, contextMessage.toConversationTurn())
+        }
+
         return Conversation(turns)
     }
 
     private companion object {
         const val ERROR_FLASH_MS = 2000L
+        const val TAG = "TurnOrchestrator"
     }
 }
 

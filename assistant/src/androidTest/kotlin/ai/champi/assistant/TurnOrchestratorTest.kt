@@ -1,5 +1,7 @@
 package ai.champi.assistant
 
+import ai.champi.core.context.ContextSnapshot
+import ai.champi.core.context.ContextSnapshotSource
 import ai.champi.core.persistence.AppDatabase
 import ai.champi.core.routing.RoutingSettingsRepository
 import ai.champi.core.state.AppStateHolder
@@ -17,6 +19,11 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+
+/** Test double: always returns an all-null snapshot so no context system message is prepended. */
+private object NoOpContextSnapshotSource : ContextSnapshotSource {
+    override suspend fun readSnapshot() = ContextSnapshot()
+}
 
 @RunWith(AndroidJUnit4::class)
 class TurnOrchestratorTest {
@@ -51,7 +58,14 @@ class TurnOrchestratorTest {
             routingDecisionDao = routingDecisionDao,
             routingSettingsRepository = settings,
         )
-        return TurnOrchestrator(conversationManager, routingPolicy, settings, queuedTurnDao, appStateHolder)
+        return TurnOrchestrator(
+            conversationManager,
+            routingPolicy,
+            settings,
+            queuedTurnDao,
+            appStateHolder,
+            NoOpContextSnapshotSource,
+        )
     }
 
     @Test
