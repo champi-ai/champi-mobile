@@ -2,6 +2,7 @@ package ai.champi.overlay
 
 import ai.champi.assistant.ConversationManager
 import ai.champi.assistant.TurnOrchestrator
+import ai.champi.assistant.VoiceTurnOrchestrator
 import ai.champi.audio.AudioCapture
 import ai.champi.core.actions.ActiveTimerRegistry
 import ai.champi.core.overlay.OverlayPreferencesRepository
@@ -34,6 +35,7 @@ class OverlayManager @Inject constructor(
     private val preferences: OverlayPreferencesRepository,
     private val conversationManager: ConversationManager,
     private val turnOrchestrator: TurnOrchestrator,
+    private val voiceTurnOrchestrator: VoiceTurnOrchestrator,
     private val audioCapture: AudioCapture,
     private val activeTimerRegistry: ActiveTimerRegistry,
 ) {
@@ -73,6 +75,7 @@ class OverlayManager @Inject constructor(
                 preferences = preferences,
                 conversationManager = conversationManager,
                 turnOrchestrator = turnOrchestrator,
+                voiceTurnOrchestrator = voiceTurnOrchestrator,
                 audioCapture = audioCapture,
                 activeTimerRegistry = activeTimerRegistry,
                 scope = overlayScope,
