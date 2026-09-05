@@ -10,15 +10,11 @@ import ai.champi.providers.api.Locality
 import ai.champi.providers.api.LlmProvider
 import ai.champi.providers.api.SttProvider
 import ai.champi.providers.api.TtsProvider
+import ai.champi.providers.api.estimateTokens
 import kotlinx.coroutines.flow.first
-
-/** Characters-per-token approximation used for all token estimates in routing heuristics. */
-private const val CHARS_PER_TOKEN = 4
 
 /** A request must consume less than this fraction of a provider's maxInputTokens to be considered fitting. */
 private const val FITS_BUDGET_FRACTION = 0.8
-
-private fun estimateTokens(text: String): Int = text.length / CHARS_PER_TOKEN
 
 /**
  * Edge-first provider selection for the three routable pipeline stages (STT, LLM, TTS) per §3.3.
