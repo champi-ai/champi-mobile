@@ -13,11 +13,11 @@ data class ConversationTurn(val role: ConversationRole, val text: String)
  */
 data class Conversation(val turns: List<ConversationTurn>) {
     /**
-     * Rough token count of all turns in this context, estimated at 4 characters per token.
+     * Rough token count of all turns in this context, estimated via [estimateTokens].
      * Used by the routing heuristic to decide whether a request fits within the edge model's
      * declared [ProviderCapabilities.maxInputTokens] budget.
      */
-    val totalTokens: Int get() = turns.sumOf { it.text.length } / 4
+    val totalTokens: Int get() = turns.sumOf { estimateTokens(it.text) }
 }
 
 sealed class LlmEvent {
