@@ -19,12 +19,14 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.SystemClock
 import android.view.Gravity
+import android.view.HapticFeedbackConstants
 import androidx.core.content.ContextCompat
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.absoluteOffset
 import androidx.compose.foundation.layout.fillMaxSize
@@ -93,15 +95,19 @@ private const val DISMISS_ZONE_HEIGHT_DP = 64
  * the brief drag the user's single finger is already on the bubble, so nothing else needs to
  * receive touches anyway.
  *
- * The bubble [Box] and its `pointerInput(Unit)` modifier occupy the **same structural position**
- * in the Compose tree for both [OverlayMode.COLLAPSED] and [OverlayMode.QUICK_ACTIONS] — they
- * are merged into a single `else` branch of the mode switch. This preserves the pointer-stream
- * coroutine across the COLLAPSED→QUICK_ACTIONS transition so that a finger still held down after
- * the long-press fires continues to be tracked: [AppState.attention] is updated as the finger
- * moves between targets, and the release position is compared against the target geometry to fire
- * the correct action (or cancel cleanly). Without this, the coroutine would be cancelled by
- * Compose when the composition branch changed, leaving `clickable` on the new composables to
- * handle a pointer stream they can never receive because it started in a different window layout.
+ * Quick-actions is a **release-then-tap** interaction, not hold-and-drag-to-select: the window is
+ * only resized to [QUICK_ACTIONS_WINDOW_DP] *after* the long-press finger lifts, never while a
+ * pointer is still down. This was originally a hold-and-drag gesture (resize the window the
+ * instant the long-press fires, while still tracking the same finger to preview/select a target),
+ * but on-device diagnosis found that resizing/repositioning a window via
+ * [android.view.WindowManager.updateViewLayout] *while it owns an active pointer stream* is
+ * unreliable at the platform level: `InputDispatcher` logs `dropping inconsistent event` and stops
+ * delivering the rest of that touch sequence once the window's input transform changes underneath
+ * it, corrupting the gesture state machine (targets never appeared in time, or a corrupted release
+ * was misread as a plain tap into [OverlayMode.EXPANDED]). Resizing only ever happens between
+ * gestures now — once on long-press release (into [OverlayMode.QUICK_ACTIONS]) and once on the
+ * next tap (a target, the background to cancel, or the bubble itself to cancel) — so no window
+ * bounds change ever happens mid-touch.
  */
 @Composable
 internal fun OverlayRoot(
@@ -262,9 +268,9 @@ internal fun OverlayRoot(
         }
     }
 
-    // Reset attention whenever the quick-actions surface is dismissed — covers both the pointer
-    // path (onQuickActionsRelease resets it inline) and the TalkBack path (onSelect fires from
-    // a clickable handler, which sets mode = COLLAPSED without going through the gesture loop).
+    // AppState.attention has no live producer since quick-actions moved to release-then-tap (no
+    // finger position to track once the window only resizes between gestures) — kept at 0 as a
+    // safe default for whenever a future character-rendering consumer reads it.
     LaunchedEffect(mode) {
         if (mode != OverlayMode.QUICK_ACTIONS) {
             appStateHolder.setAttention(0f)
@@ -355,23 +361,26 @@ internal fun OverlayRoot(
         )
 
         // COLLAPSED and QUICK_ACTIONS share a single composition subtree so the bubble Box and
-        // its pointerInput(Unit) block stay at the same structural position — Compose preserves
-        // the node identity (and therefore the running gesture coroutine) across the window resize
-        // that happens when the long-press fires and mode flips to QUICK_ACTIONS. This is the same
-        // technique used for the drag/dismiss full-screen expansion in the COLLAPSED branch, where
-        // isDragging changes the window spec but the bubble node is never recreated.
+        // its pointerInput(Unit) block stay at the same structural position across the two modes,
+        // matching the same technique used for the drag/dismiss full-screen expansion below (where
+        // isDragging changes the window spec but the bubble node is never recreated). This no
+        // longer needs to preserve an in-flight gesture coroutine across the resize (quick-actions
+        // is release-then-tap now, so the window never resizes mid-touch — see the class doc) but
+        // keeping one `else` branch still avoids an unnecessary node recreation on every open/close.
         else -> {
             // Outer Box fills the current window, whatever size it is for the current mode.
             Box(modifier = Modifier.fillMaxSize()) {
-                // Quick-actions layer — composed whenever the mode is QUICK_ACTIONS; centred in
-                // the 280 × 280 dp quick-actions window. The clickable handlers on each target
-                // work for TalkBack (which synthesises a new pointer stream) and for direct taps
-                // after the user lifts the long-press finger. For the hold-and-release gesture
-                // (finger still down when targets appear) the action is resolved via
-                // onQuickActionsRelease in the detectBubbleGestures loop instead, because the
-                // original pointer stream cannot be delivered to a composable that entered the
-                // tree after the stream started.
                 if (mode == OverlayMode.QUICK_ACTIONS) {
+                    // Background tap-to-cancel: composed *under* QuickActionsLayer so its own
+                    // clickable targets get first claim on a touch (detectTapGestures here defaults
+                    // to requireUnconsumed, so a tap a target already consumed never reaches this).
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .pointerInput(Unit) {
+                                detectTapGestures { mode = OverlayMode.COLLAPSED }
+                            },
+                    )
                     QuickActionsLayer(
                         visible = true,
                         geometry = geometry,
@@ -422,7 +431,6 @@ internal fun OverlayRoot(
                             }
                         }
                         .pointerInput(Unit) {
-                            val arcRadiusPx = with(density) { 96.dp.toPx() }
                             detectBubbleGestures(
                                 onTouchStart = {
                                     // Capture peek state before clearing it so onTap can distinguish
@@ -486,35 +494,26 @@ internal fun OverlayRoot(
                                     }
                                 },
                                 onTap = {
-                                    // When the bubble was peeked at touch-down, the tap's purpose is
-                                    // to restore full visibility — don't also open the panel.
-                                    if (!peekedAtDown) {
-                                        mode = OverlayMode.EXPANDED
+                                    when {
+                                        // A tap landing on the bubble while quick-actions is open
+                                        // (the fresh gesture following long-press release) cancels,
+                                        // same as tapping the background — it must not also open
+                                        // the panel.
+                                        mode == OverlayMode.QUICK_ACTIONS -> mode = OverlayMode.COLLAPSED
+                                        // When the bubble was peeked at touch-down, the tap's
+                                        // purpose is to restore full visibility — don't also open
+                                        // the panel.
+                                        !peekedAtDown -> mode = OverlayMode.EXPANDED
                                     }
                                     peekedAtDown = false
                                 },
-                                onLongPress = { mode = OverlayMode.QUICK_ACTIONS },
-                                onQuickActionsMove = { posFromBubbleCenter ->
-                                    // Drive AppState.attention from how far the finger has moved
-                                    // from the bubble centre toward the arc perimeter (0 = at
-                                    // centre, 1 = at the arc radius or beyond).
-                                    val distance = posFromBubbleCenter.getDistance()
-                                    appStateHolder.setAttention((distance / arcRadiusPx).coerceIn(0f, 1f))
+                                onLongPress = {
+                                    // Haptic-only: the window is not resized here. Resizing while
+                                    // this gesture's pointer is still down is what broke quick-actions
+                                    // in the first place — see the class doc.
+                                    view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
                                 },
-                                onQuickActionsRelease = { posFromBubbleCenter ->
-                                    // Reset attention first — covers cancel and select paths alike.
-                                    appStateHolder.setAttention(0f)
-                                    val hitAction = quickActionsHitTest(
-                                        geometry = geometry,
-                                        anchorEdgeIsStart = isAtStartEdge,
-                                        posFromBubbleCenter = posFromBubbleCenter,
-                                        density = density,
-                                        quickActionsWindowDp = QUICK_ACTIONS_WINDOW_DP,
-                                        bubbleSizeDp = BUBBLE_SIZE_DP,
-                                    )
-                                    if (hitAction != null) executeQuickAction(hitAction)
-                                    mode = OverlayMode.COLLAPSED
-                                },
+                                onLongPressReleased = { mode = OverlayMode.QUICK_ACTIONS },
                             )
                         },
                 ) {
@@ -569,10 +568,11 @@ private fun DismissZoneIndicator(active: Boolean, modifier: Modifier = Modifier)
  * race for the same down event, so this races a long-press timer against incoming pointer
  * events by hand.
  *
- * After the long-press fires, pointer movement and the eventual release are delivered via
- * [onQuickActionsMove] and [onQuickActionsRelease] respectively. Both receive the finger
- * position relative to the bubble centre in pixels, so the caller can drive [AppState.attention]
- * and resolve which quick-action target (if any) was released on.
+ * Once the long-press timer fires, further movement is ignored (no drag, no target preview) and
+ * [onLongPress] is called once, immediately, purely as an in-gesture signal (e.g. haptic feedback)
+ * — it must not resize any window, since this same pointer is still down. The actual mode change
+ * only happens once the finger lifts, via [onLongPressReleased]: only then is it safe for the
+ * caller to resize/reposition a window, because no gesture depends on this pointer any more.
  */
 private suspend fun PointerInputScope.detectBubbleGestures(
     onTouchStart: () -> Unit,
@@ -581,8 +581,7 @@ private suspend fun PointerInputScope.detectBubbleGestures(
     onDragEnd: () -> Unit,
     onTap: () -> Unit,
     onLongPress: () -> Unit,
-    onQuickActionsMove: (posFromBubbleCenter: Offset) -> Unit = {},
-    onQuickActionsRelease: (posFromBubbleCenter: Offset) -> Unit = {},
+    onLongPressReleased: () -> Unit = {},
 ) = awaitEachGesture {
     val down = awaitFirstDown(requireUnconsumed = false)
     onTouchStart()
@@ -591,7 +590,6 @@ private suspend fun PointerInputScope.detectBubbleGestures(
     var longPressFired = false
     var totalDrag = Offset.Zero
     val slop = viewConfiguration.touchSlop
-    val bubbleCenter = Offset(size.width / 2f, size.height / 2f)
 
     while (true) {
         // AwaitPointerEventScope is @RestrictsSuspension, so a long-press timer can't run as a
@@ -613,15 +611,14 @@ private suspend fun PointerInputScope.detectBubbleGestures(
         if (!change.pressed) {
             when {
                 dragging -> onDragEnd()
-                longPressFired -> onQuickActionsRelease(change.position - bubbleCenter)
+                longPressFired -> onLongPressReleased()
                 else -> onTap()
             }
             break
         }
         val delta = change.positionChange()
         totalDrag += delta
-        // Do not start a drag after the long-press has fired — finger movement post-long-press
-        // drives quick-action attention, not a bubble drag.
+        // Do not start a drag after the long-press has fired.
         if (!dragging && !longPressFired && totalDrag.getDistance() > slop) {
             dragging = true
             onDragStart()
@@ -629,8 +626,6 @@ private suspend fun PointerInputScope.detectBubbleGestures(
         if (dragging) {
             change.consume()
             onDrag(delta)
-        } else if (longPressFired) {
-            onQuickActionsMove(change.position - bubbleCenter)
         }
     }
 }
