@@ -35,10 +35,20 @@ fun CharacterPlaceholder(state: CharacterState, size: Dp, modifier: Modifier = M
         ),
         label = "scale",
     )
+    val isNotifying = state == CharacterState.NOTIFYING
+    val pulseScale by transition.animateFloat(
+        initialValue = 1f,
+        targetValue = if (isNotifying) 1.05f else 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 500, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "pulse",
+    )
     Box(
         modifier = modifier
             .size(size)
-            .scale(scale)
+            .scale(scale * pulseScale)
             .clip(CircleShape)
             .background(colorFor(state)),
     )
